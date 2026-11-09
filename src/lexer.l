@@ -1,13 +1,17 @@
 %{
+#include "symtab.h"
 #include "ast.h"
 #include "parser.tab.h"
 #include <string.h>
 
 void yyerror(const char *s);
+static int can_be_relop = 0;
 %}
 
 %option noyywrap
 %option yylineno
+%option nounput
+%option noinput
 
 %x MULTI_COMMENT
 
@@ -23,56 +27,68 @@ void yyerror(const char *s);
 <MULTI_COMMENT>\n       ;
 <MULTI_COMMENT>.        ;
 
-"glu"                   { return GLU; }
-"inteiro"   { yylval.data_type = TYPE_INTEIRO; return TIPO; }
-"real"      { yylval.data_type = TYPE_REAL; return TIPO; }
-"booleano"  { yylval.data_type = TYPE_BOOLEANO; return TIPO; }
-"texto"     { yylval.data_type = TYPE_TEXTO; return TIPO; }
+"glu"                   { can_be_relop = 0; return GLU; }
+"inteiro"               { can_be_relop = 0; yylval.data_type = TYPE_INTEIRO; return TIPO; }
+"real"                  { can_be_relop = 0; yylval.data_type = TYPE_REAL; return TIPO; }
+"booleano"              { can_be_relop = 0; yylval.data_type = TYPE_BOOLEANO; return TIPO; }
+"texto"                 { can_be_relop = 0; yylval.data_type = TYPE_TEXTO; return TIPO; }
 
-"GORGOREJA"             { return GORGOREJA; }
-"CISCA"                 { return CISCA; }
-"IFGLU"                 { return IFGLU; }
-"WHILEGLU"              { return WHILEGLU; }
-"FORGLU"                { return FORGLU; }
-"STOPGLU"               { return STOPGLU; }
-"PULAGLU"               { return PULAGLU; }
-"CHOCA"                 { return CHOCA; }
-"NINHO"                 { return NINHO; }
-"RETORNAGLU"            { return RETORNAGLU; }
+"GORGOREJA"             { can_be_relop = 0; return GORGOREJA; }
+"CISCA"                 { can_be_relop = 0; return CISCA; }
+"IFGLU"                 { can_be_relop = 0; return IFGLU; }
+"ELSEGLU"               { can_be_relop = 0; return ELSEGLU; }
+"WHILEGLU"              { can_be_relop = 0; return WHILEGLU; }
+"FORGLU"                { can_be_relop = 0; return FORGLU; }
+"STOPGLU"               { can_be_relop = 0; return STOPGLU; }
+"PULAGLU"               { can_be_relop = 0; return PULAGLU; }
+"CHOCA"                 { can_be_relop = 0; return CHOCA; }
+"NINHO"                 { can_be_relop = 0; return NINHO; }
+"RETORNAGLU"            { can_be_relop = 0; return RETORNAGLU; }
 
-"true"                  { yylval.num_int = 1; return LIT_BOOL; }
-"false"                 { yylval.num_int = 0; return LIT_BOOL; }
+"And"|"and"             { can_be_relop = 0; return OP_AND; }
+"or"|"OR"               { can_be_relop = 0; return OP_OR; }
+"not"|"NOT"             { can_be_relop = 0; return OP_NOT; }
 
-"<-"                    { return ATRIB; }
-":"                     { return ':'; }
-";"                     { return ';'; }
-","                     { return ','; }
-"{"                     { return '{'; }
-"}"                     { return '}'; }
-"("                     { return '('; }
-")"                     { return ')'; }
+"true"                  { can_be_relop = 1; yylval.num_int = 1; return LIT_BOOL; }
+"false"                 { can_be_relop = 1; yylval.num_int = 0; return LIT_BOOL; }
 
-"+"                     { return '+'; }
-"-"                     { return '-'; }
-"*"                     { return '*'; }
-"/"                     { return '/'; }
+"<-"                    { can_be_relop = 0; return ATRIB; }
+":"                     { can_be_relop = 0; return ':'; }
+";"                     { can_be_relop = 0; return ';'; }
+","                     { can_be_relop = 0; return ','; }
+"{"                     { can_be_relop = 0; return '{'; }
+"}"                     { can_be_relop = 0; return '}'; }
+"("                     { can_be_relop = 0; return '('; }
+")"                     { can_be_relop = 1; return ')'; }
 
-"<="                    { return OP_LE; }
-">="                    { return OP_GE; }
-"=="                    { return OP_EQ; }
-"<"                     { return '<'; }
-">"                     { return '>'; }
+"+"                     { can_be_relop = 0; return '+'; }
+"-"                     { can_be_relop = 0; return '-'; }
+"*"                     { can_be_relop = 0; return '*'; }
+"/"                     { can_be_relop = 0; return '/'; }
 
-[0-9]+\.[0-9]+          { yylval.num_real = atof(yytext); return LIT_REAL; }
-[0-9]+                  { yylval.num_int = atoi(yytext); return LIT_INT; }
+"<="                    { can_be_relop = 0; return OP_LE; }
+">="                    { can_be_relop = 0; return OP_GE; }
+"=="                    { can_be_relop = 0; return OP_EQ; }
+"!="                    { can_be_relop = 0; return OP_NE; }
+"<"                     { can_be_relop = 0; return '<'; }
+">"                     { can_be_relop = 0; return '>'; }
 
-\<([^>\n]*)\>           { 
+[0-9]+\.[0-9]+          { can_be_relop = 1; yylval.num_real = atof(yytext); return LIT_REAL; }
+[0-9]+                  { can_be_relop = 1; yylval.num_int = atoi(yytext); return LIT_INT; }
+
+\<([^>\n]*)\>           {
+                            if (can_be_relop) {
+                                yyless(1);
+                                can_be_relop = 0;
+                                return '<';
+                            }
                             yytext[yyleng - 1] = '\0';
-                            yylval.str = strdup(yytext + 1); 
-                            return LIT_TEXTO; 
+                            yylval.str = strdup(yytext + 1);
+                            can_be_relop = 1;
+                            return LIT_TEXTO;
                         }
 
-[a-zA-Z_][a-zA-Z0-9_]*  { yylval.str = strdup(yytext); return ID; }
+[a-zA-Z_][a-zA-Z0-9_]*  { can_be_relop = 1; yylval.str = strdup(yytext); return ID; }
 
 .                       { printf("Erro lexico: simbolo desconhecido '%s' na linha %d\n", yytext, yylineno); }
 
