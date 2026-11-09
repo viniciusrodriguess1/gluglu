@@ -53,5 +53,7 @@ ASTNode *create_id(const char *name, DataType type);
 ASTNode *create_bin_op(const char *op, DataType type, ASTNode *left, ASTNode *right);
 ASTNode *create_unary_op(const char *op, DataType type, ASTNode *operand);
 void generate_code(ASTNode *root, FILE *out);
+void print_ast(ASTNode *root, FILE *out);
+void free_ast(ASTNode *node);
 
 #endif

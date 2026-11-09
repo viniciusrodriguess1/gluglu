@@ -5,6 +5,7 @@
 #include <string.h>
 
 void yyerror(const char *s);
+extern int lexical_errors;
 static int can_be_relop = 0;
 %}
 
@@ -90,6 +91,9 @@ static int can_be_relop = 0;
 
 [a-zA-Z_][a-zA-Z0-9_]*  { can_be_relop = 1; yylval.str = strdup(yytext); return ID; }
 
-.                       { printf("Erro lexico: simbolo desconhecido '%s' na linha %d\n", yytext, yylineno); }
+.                       {
+                            fprintf(stderr, "Erro lexico na linha %d: simbolo desconhecido '%s'.\n", yylineno, yytext);
+                            lexical_errors++;
+                        }
 
 %%

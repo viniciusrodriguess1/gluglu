@@ -11,12 +11,54 @@ void yyerror(const char *s);
 
 SymbolTable *st = NULL;
 ASTNode *root = NULL;
+int lexical_errors = 0;
 int semantic_errors = 0;
 
-static DataType infer_arith_type(DataType left, DataType right) {
-    if (left == TYPE_REAL || right == TYPE_REAL) return TYPE_REAL;
-    if (left == TYPE_INTEIRO && right == TYPE_INTEIRO) return TYPE_INTEIRO;
+static DataType infer_arith_type(const char *op, DataType left, DataType right) {
+    if (left == TYPE_UNKNOWN || right == TYPE_UNKNOWN) return TYPE_UNKNOWN;
+    if ((left == TYPE_INTEIRO || left == TYPE_REAL) &&
+        (right == TYPE_INTEIRO || right == TYPE_REAL)) {
+        if (left == TYPE_REAL || right == TYPE_REAL) return TYPE_REAL;
+        return TYPE_INTEIRO;
+    }
+    fprintf(stderr, "Erro semantico na linha %d: operandos incompativeis para o operador aritmetico '%s' ('%s' e '%s').\n",
+            yylineno, op, datatype_to_str(left), datatype_to_str(right));
+    semantic_errors++;
     return TYPE_UNKNOWN;
+}
+
+static DataType check_rel_type(const char *op, DataType left, DataType right) {
+    if (left == TYPE_UNKNOWN || right == TYPE_UNKNOWN) return TYPE_BOOLEANO;
+    bool both_num = (left == TYPE_INTEIRO || left == TYPE_REAL) &&
+                    (right == TYPE_INTEIRO || right == TYPE_REAL);
+    bool same_eq = (strcmp(op, "==") == 0 || strcmp(op, "!=") == 0) && (left == right);
+    if (!both_num && !same_eq) {
+        fprintf(stderr, "Erro semantico na linha %d: operandos incompativeis para o operador relacional '%s' ('%s' e '%s').\n",
+                yylineno, op, datatype_to_str(left), datatype_to_str(right));
+        semantic_errors++;
+    }
+    return TYPE_BOOLEANO;
+}
+
+static DataType check_logic_type(const char *op, DataType left, DataType right) {
+    if (left != TYPE_UNKNOWN && left != TYPE_BOOLEANO) {
+        fprintf(stderr, "Erro semantico na linha %d: operador logico '%s' requer operandos booleanos (recebido '%s').\n",
+                yylineno, op, datatype_to_str(left));
+        semantic_errors++;
+    } else if (right != TYPE_UNKNOWN && right != TYPE_BOOLEANO) {
+        fprintf(stderr, "Erro semantico na linha %d: operador logico '%s' requer operandos booleanos (recebido '%s').\n",
+                yylineno, op, datatype_to_str(right));
+        semantic_errors++;
+    }
+    return TYPE_BOOLEANO;
+}
+
+static void check_cond_type(const char *cmd, DataType cond_type) {
+    if (cond_type != TYPE_UNKNOWN && cond_type != TYPE_BOOLEANO) {
+        fprintf(stderr, "Erro semantico na linha %d: a condicao de '%s' deve ser do tipo 'booleano' (recebido '%s').\n",
+                yylineno, cmd, datatype_to_str(cond_type));
+        semantic_errors++;
+    }
 }
 
 static DataType infer_return_type(ASTNode *body) {
@@ -219,6 +261,7 @@ comando_entrada:
 
 comando_if:
     IFGLU '(' expressao ')' bloco_escopo else_opt {
+        check_cond_type("IFGLU", $3->data_type);
         ASTNode *n = create_node(NODE_IF);
         n->left = $3;
         n->right = $5;
@@ -234,6 +277,7 @@ else_opt:
 
 comando_while:
     WHILEGLU '(' expressao ')' bloco_escopo {
+        check_cond_type("WHILEGLU", $3->data_type);
         ASTNode *n = create_node(NODE_WHILE);
         n->left = $3;
         n->right = $5;
@@ -248,6 +292,7 @@ for_init:
 
 comando_for:
     FORGLU '(' { symtab_enter_scope(st); } for_init ';' expressao ';' atribuicao ')' '{' comando_lista_opt '}' {
+        check_cond_type("FORGLU", $6->data_type);
         symtab_exit_scope(st);
         ASTNode *n = create_node(NODE_FOR);
         n->init = $4;
@@ -363,20 +408,20 @@ lista_args:
     ;
 
 expressao:
-    expressao '+' expressao    { $$ = create_bin_op("+", infer_arith_type($1->data_type, $3->data_type), $1, $3); }
-    | expressao '-' expressao  { $$ = create_bin_op("-", infer_arith_type($1->data_type, $3->data_type), $1, $3); }
-    | expressao '*' expressao  { $$ = create_bin_op("*", infer_arith_type($1->data_type, $3->data_type), $1, $3); }
-    | expressao '/' expressao  { $$ = create_bin_op("/", infer_arith_type($1->data_type, $3->data_type), $1, $3); }
-    | expressao '<' expressao  { $$ = create_bin_op("<", TYPE_BOOLEANO, $1, $3); }
-    | expressao '>' expressao  { $$ = create_bin_op(">", TYPE_BOOLEANO, $1, $3); }
-    | expressao OP_LE expressao { $$ = create_bin_op("<=", TYPE_BOOLEANO, $1, $3); }
-    | expressao OP_GE expressao { $$ = create_bin_op(">=", TYPE_BOOLEANO, $1, $3); }
-    | expressao OP_EQ expressao { $$ = create_bin_op("==", TYPE_BOOLEANO, $1, $3); }
-    | expressao OP_NE expressao { $$ = create_bin_op("!=", TYPE_BOOLEANO, $1, $3); }
-    | expressao OP_AND expressao { $$ = create_bin_op("&&", TYPE_BOOLEANO, $1, $3); }
-    | expressao OP_OR expressao  { $$ = create_bin_op("||", TYPE_BOOLEANO, $1, $3); }
-    | OP_NOT expressao           { $$ = create_unary_op("!", TYPE_BOOLEANO, $2); }
-    | '-' expressao %prec UMINUS { $$ = create_unary_op("-", $2->data_type, $2); }
+    expressao '+' expressao    { $$ = create_bin_op("+", infer_arith_type("+", $1->data_type, $3->data_type), $1, $3); }
+    | expressao '-' expressao  { $$ = create_bin_op("-", infer_arith_type("-", $1->data_type, $3->data_type), $1, $3); }
+    | expressao '*' expressao  { $$ = create_bin_op("*", infer_arith_type("*", $1->data_type, $3->data_type), $1, $3); }
+    | expressao '/' expressao  { $$ = create_bin_op("/", infer_arith_type("/", $1->data_type, $3->data_type), $1, $3); }
+    | expressao '<' expressao  { $$ = create_bin_op("<", check_rel_type("<", $1->data_type, $3->data_type), $1, $3); }
+    | expressao '>' expressao  { $$ = create_bin_op(">", check_rel_type(">", $1->data_type, $3->data_type), $1, $3); }
+    | expressao OP_LE expressao { $$ = create_bin_op("<=", check_rel_type("<=", $1->data_type, $3->data_type), $1, $3); }
+    | expressao OP_GE expressao { $$ = create_bin_op(">=", check_rel_type(">=", $1->data_type, $3->data_type), $1, $3); }
+    | expressao OP_EQ expressao { $$ = create_bin_op("==", check_rel_type("==", $1->data_type, $3->data_type), $1, $3); }
+    | expressao OP_NE expressao { $$ = create_bin_op("!=", check_rel_type("!=", $1->data_type, $3->data_type), $1, $3); }
+    | expressao OP_AND expressao { $$ = create_bin_op("&&", check_logic_type("And", $1->data_type, $3->data_type), $1, $3); }
+    | expressao OP_OR expressao  { $$ = create_bin_op("||", check_logic_type("or", $1->data_type, $3->data_type), $1, $3); }
+    | OP_NOT expressao           { $$ = create_unary_op("!", check_logic_type("not", $2->data_type, TYPE_BOOLEANO), $2); }
+    | '-' expressao %prec UMINUS { $$ = create_unary_op("-", infer_arith_type("-", $2->data_type, $2->data_type), $2); }
     | '(' expressao ')'        { $$ = $2; }
     | LIT_INT                  { $$ = create_num_int($1); }
     | LIT_REAL                 { $$ = create_num_real($1); }
@@ -402,17 +447,30 @@ void yyerror(const char *s) {
     fprintf(stderr, "Erro sintatico proximo a linha %d: %s\n", yylineno, s);
 }
 
-int main(void) {
+int main(int argc, char **argv) {
+    int dump_ast = 0;
+    for (int i = 1; i < argc; i++) {
+        if (strcmp(argv[i], "--ast") == 0 || strcmp(argv[i], "-a") == 0) {
+            dump_ast = 1;
+        }
+    }
+
     st = symtab_create();
 
-    if (yyparse() == 0 && semantic_errors == 0) {
-        generate_code(root, stdout);
+    if (yyparse() == 0 && lexical_errors == 0 && semantic_errors == 0) {
+        if (dump_ast) {
+            print_ast(root, stdout);
+        } else {
+            generate_code(root, stdout);
+        }
     } else {
         fprintf(stderr, "\nCompilacao abortada: foram encontrados erros no programa.\n");
+        free_ast(root);
         symtab_destroy(st);
         return 1;
     }
 
+    free_ast(root);
     symtab_destroy(st);
     return 0;
 }

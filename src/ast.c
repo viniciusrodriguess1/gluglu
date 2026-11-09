@@ -278,3 +278,148 @@ void generate_code(ASTNode *root, FILE *out) {
     emit_stmt_list(root, out, 1);
     fprintf(out, "    return 0;\n}\n");
 }
+
+static void print_ast_node(ASTNode *node, FILE *out, int indent) {
+    while (node) {
+        emit_indent(out, indent);
+        switch (node->type) {
+            case NODE_VAR_DECL:
+                fprintf(out, "[VAR_DECL] %s : %s\n", node->left ? node->left->name : "?", node->name ? node->name : "?");
+                print_ast_node(node->right, out, indent + 1);
+                break;
+            case NODE_ASSIGN:
+                fprintf(out, "[ASSIGN] %s <-\n", node->left ? node->left->name : "?");
+                print_ast_node(node->right, out, indent + 1);
+                break;
+            case NODE_PRINT:
+                fprintf(out, "[GORGOREJA]\n");
+                print_ast_node(node->left, out, indent + 1);
+                break;
+            case NODE_READ:
+                fprintf(out, "[CISCA] %s (%s)\n", node->left ? node->left->name : "?",
+                        datatype_to_str(node->left ? node->left->data_type : TYPE_UNKNOWN));
+                break;
+            case NODE_IF:
+                fprintf(out, "[IFGLU]\n");
+                emit_indent(out, indent + 1);
+                fprintf(out, "(condicao):\n");
+                print_ast_node(node->left, out, indent + 2);
+                emit_indent(out, indent + 1);
+                fprintf(out, "(entao):\n");
+                print_ast_node(node->right, out, indent + 2);
+                if (node->extra) {
+                    emit_indent(out, indent + 1);
+                    fprintf(out, "(senao):\n");
+                    print_ast_node(node->extra, out, indent + 2);
+                }
+                break;
+            case NODE_WHILE:
+                fprintf(out, "[WHILEGLU]\n");
+                emit_indent(out, indent + 1);
+                fprintf(out, "(condicao):\n");
+                print_ast_node(node->left, out, indent + 2);
+                emit_indent(out, indent + 1);
+                fprintf(out, "(corpo):\n");
+                print_ast_node(node->right, out, indent + 2);
+                break;
+            case NODE_FOR:
+                fprintf(out, "[FORGLU]\n");
+                emit_indent(out, indent + 1);
+                fprintf(out, "(init):\n");
+                print_ast_node(node->init, out, indent + 2);
+                emit_indent(out, indent + 1);
+                fprintf(out, "(condicao):\n");
+                print_ast_node(node->left, out, indent + 2);
+                emit_indent(out, indent + 1);
+                fprintf(out, "(passo):\n");
+                print_ast_node(node->extra, out, indent + 2);
+                emit_indent(out, indent + 1);
+                fprintf(out, "(corpo):\n");
+                print_ast_node(node->right, out, indent + 2);
+                break;
+            case NODE_BREAK:
+                fprintf(out, "[STOPGLU]\n");
+                break;
+            case NODE_CONTINUE:
+                fprintf(out, "[PULAGLU]\n");
+                break;
+            case NODE_FUNC_DECL:
+                fprintf(out, "[%s] %s -> %s\n",
+                        node->data_type == TYPE_VOID ? "NINHO" : "CHOCA",
+                        node->name ? node->name : "?",
+                        datatype_to_str(node->data_type));
+                if (node->extra) {
+                    emit_indent(out, indent + 1);
+                    fprintf(out, "(parametros):\n");
+                    print_ast_node(node->extra, out, indent + 2);
+                }
+                emit_indent(out, indent + 1);
+                fprintf(out, "(corpo):\n");
+                print_ast_node(node->right, out, indent + 2);
+                break;
+            case NODE_PARAM:
+                fprintf(out, "[PARAM] %s : %s\n", node->name ? node->name : "?", datatype_to_str(node->data_type));
+                break;
+            case NODE_FUNC_CALL:
+                fprintf(out, "[CALL] %s (%s)\n", node->name ? node->name : "?", datatype_to_str(node->data_type));
+                if (node->left) {
+                    print_ast_node(node->left, out, indent + 1);
+                }
+                break;
+            case NODE_RETURN:
+                fprintf(out, "[RETORNAGLU] (%s)\n", datatype_to_str(node->data_type));
+                print_ast_node(node->left, out, indent + 1);
+                break;
+            case NODE_BLOCK:
+                fprintf(out, "[BLOCK]\n");
+                print_ast_node(node->left, out, indent + 1);
+                break;
+            case NODE_BIN_OP:
+                fprintf(out, "[BIN_OP '%s'] (%s)\n", node->op, datatype_to_str(node->data_type));
+                print_ast_node(node->left, out, indent + 1);
+                print_ast_node(node->right, out, indent + 1);
+                break;
+            case NODE_UNARY_OP:
+                fprintf(out, "[UNARY_OP '%s'] (%s)\n", node->op, datatype_to_str(node->data_type));
+                print_ast_node(node->left, out, indent + 1);
+                break;
+            case NODE_NUM_INT:
+                fprintf(out, "[LIT_INT] %d (int)\n", node->int_val);
+                break;
+            case NODE_NUM_REAL:
+                fprintf(out, "[LIT_REAL] %f (double)\n", node->real_val);
+                break;
+            case NODE_BOOL:
+                fprintf(out, "[LIT_BOOL] %s (bool)\n", node->int_val ? "true" : "false");
+                break;
+            case NODE_STRING:
+                fprintf(out, "[LIT_TEXTO] <%s> (char*)\n", node->name ? node->name : "");
+                break;
+            case NODE_ID:
+                fprintf(out, "[ID] %s (%s)\n", node->name ? node->name : "?", datatype_to_str(node->data_type));
+                break;
+            default:
+                fprintf(out, "[NODE %d]\n", node->type);
+                break;
+        }
+        node = node->next;
+    }
+}
+
+void print_ast(ASTNode *root, FILE *out) {
+    fprintf(out, "=== AST (Arvore Sintatica Abstrata) ===\n");
+    print_ast_node(root, out, 0);
+}
+
+void free_ast(ASTNode *node) {
+    while (node) {
+        ASTNode *next = node->next;
+        free_ast(node->left);
+        free_ast(node->right);
+        free_ast(node->extra);
+        free_ast(node->init);
+        free(node->name);
+        free(node);
+        node = next;
+    }
+}
