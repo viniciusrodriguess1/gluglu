@@ -1,0 +1,8 @@
+glu: idade : inteiro <- 0;
+
+GORGOREJA(<Digite sua idade: >);
+CISCA(idade);
+
+IFGLU (idade >= 18) {
+    GORGOREJA(<Acesso Liberado!>);
+}

@@ -1,0 +1,6 @@
+glu: nota1 : real <- 8.5;
+glu: nota2 : real <- 7.0;
+glu: media : real <- (nota1 * 2.0 + nota2 * 3.0) / 5.0;
+
+GORGOREJA(<Media Ponderada: >);
+GORGOREJA(media);

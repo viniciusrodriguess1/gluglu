@@ -1,0 +1,15 @@
+glu: contador : inteiro <- 5;
+
+WHILEGLU (contador > 0) {
+    GORGOREJA(contador);
+    
+    IFGLU (contador == 2) {
+        GORGOREJA(<Interrompendo antecipadamente...>);
+        STOPGLU;
+    }
+    
+    %% Reatribuicao do contador
+    contador <- contador - 1;
+}
+
+GORGOREJA(<Fim do laco!>);

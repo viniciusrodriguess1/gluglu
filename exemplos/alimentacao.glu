@@ -1,0 +1,10 @@
+NINHO alimentar_ave(texto ave, inteiro kg) {
+    GORGOREJA(<Alimentando >);
+    GORGOREJA(ave);
+    GORGOREJA(< com >);
+    GORGOREJA(kg);
+    GORGOREJA(< kg de milho.>);
+}
+
+alimentar_ave(<Pavoa>, 3);
+alimentar_ave(<Galo>, 2);
