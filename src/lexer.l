@@ -24,10 +24,10 @@ void yyerror(const char *s);
 <MULTI_COMMENT>.        ;
 
 "glu"                   { return GLU; }
-"inteiro"               { yylval.str = strdup("int"); return TIPO; }
-"real"                  { yylval.str = strdup("double"); return TIPO; }
-"booleano"              { yylval.str = strdup("bool"); return TIPO; }
-"texto"                 { yylval.str = strdup("char*"); return TIPO; }
+"inteiro"   { yylval.data_type = TYPE_INTEIRO; return TIPO; }
+"real"      { yylval.data_type = TYPE_REAL; return TIPO; }
+"booleano"  { yylval.data_type = TYPE_BOOLEANO; return TIPO; }
+"texto"     { yylval.data_type = TYPE_TEXTO; return TIPO; }
 
 "GORGOREJA"             { return GORGOREJA; }
 "CISCA"                 { return CISCA; }

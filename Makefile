@@ -14,7 +14,7 @@ $(BUILD_DIR)/parser.tab.c $(BUILD_DIR)/parser.tab.h: $(SRC_DIR)/parser.y | $(BUI
 $(BUILD_DIR)/lex.yy.c: $(SRC_DIR)/lexer.l $(BUILD_DIR)/parser.tab.h | $(BUILD_DIR)
 	flex -o $(BUILD_DIR)/lex.yy.c $(SRC_DIR)/lexer.l
 
-glugluc: $(BUILD_DIR)/parser.tab.c $(BUILD_DIR)/lex.yy.c $(SRC_DIR)/ast.c
+glugluc: $(BUILD_DIR)/parser.tab.c $(BUILD_DIR)/lex.yy.c $(SRC_DIR)/ast.c $(SRC_DIR)/symtab.c
 	$(CC) $(CFLAGS) -I$(BUILD_DIR) $^ -o $@
 
 clean:
