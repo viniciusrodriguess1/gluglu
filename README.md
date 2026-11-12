@@ -86,7 +86,7 @@ Da menor para a maior precedência:
 
 * **Saída (`GORGOREJA`):** Imprime valores literais, variáveis ou o resultado de expressões na saída padrão, escolhendo automaticamente o especificador de formato (`%d`, `%f`, `%s`) de acordo com o tipo semântico do nó na AST.
   ```gluglu
-  GORGOREJA(<Resultado: >);
+  GORGOREJA(<Resultado:>);
   GORGOREJA(media);
   ```
 * **Entrada (`CISCA`):** Lê valores fornecidos pelo usuário via console para uma variável previamente declarada.
@@ -125,7 +125,7 @@ Da menor para a maior precedência:
 * **Procedimentos sem retorno (`NINHO`):**
   ```gluglu
   NINHO alimentar_ave(texto ave, inteiro kg) {
-      GORGOREJA(<Alimentando >);
+      GORGOREJA(<Alimentando>);
       GORGOREJA(ave);
   }
   ```
@@ -208,20 +208,22 @@ expressao         ::= expressao ( "+" | "-" | "*" | "/" ) expressao
 
 ```text
 .
-├── Makefile                 # Regras de compilação automatizadas
-├── README.md                # Documentação da linguagem e do compilador
+├── Makefile                       # Regras de compilação automatizadas
+├── README.md                      # Documentação da linguagem e do compilador
 ├── src/
-│   ├── ast.h                # Definições da Árvore Sintática Abstrata (AST)
-│   ├── ast.c                # Construtores de nós, impressão da AST e geração de código C
-│   ├── symtab.h             # Estruturas da Tabela de Símbolos e escopos
-│   ├── symtab.c             # Lógica da Tabela de Símbolos e validações de tipo
-│   ├── lexer.l              # Especificação léxica (Flex)
-│   └── parser.y             # Gramática formal e ações sintático-semânticas (Bison)
+│   ├── ast.h                      # Definições da Árvore Sintática Abstrata (AST)
+│   ├── ast.c                      # Construtores de nós, impressão da AST e geração de código C
+│   ├── symtab.h                   # Estruturas da Tabela de Símbolos e escopos
+│   ├── symtab.c                   # Lógica da Tabela de Símbolos e validações de tipo
+│   ├── lexer.l                    # Especificação léxica (Flex)
+│   └── parser.y                   # Gramática formal e ações sintático-semânticas (Bison)
 └── exemplos/
-    ├── media.glu            # Programa 1: cálculo aritmético e saída
-    ├── idade.glu            # Programa 2: entrada e decisão condicional
-    ├── contador.glu         # Programa 3: repetição WHILEGLU e interrupção com STOPGLU
-    └── alimentacao.glu      # Programa 4: procedimento modular reutilizável (NINHO)
+    ├── media.glu                  # Programa 1: cálculo aritmético e saída
+    ├── idade.glu                  # Programa 2: entrada e decisão condicional
+    ├── contador.glu               # Programa 3: repetição WHILEGLU e interrupção com STOPGLU
+    ├── alimentacao.glu            # Programa 4: procedimento modular reutilizável (NINHO)
+    ├── erro_nao_declarada.glu     # Teste inválido 1: uso de variável não declarada
+    └── erro_tipo_incompativel.glu # Teste inválido 2: atribuição entre tipos incompatíveis
 ```
 
 ---
@@ -255,7 +257,7 @@ Use a flag `--ast` (ou `-a`) para inspecionar a Árvore Sintática Abstrata anot
 ./glugluc --ast < exemplos/media.glu
 ```
 
-### 3. Traduzir para C e Executar
+### 3. Traduzir para C e Executar (Casos Válidos)
 
 ```bash
 # 1. Traduz GLUGLU para C
@@ -266,6 +268,16 @@ gcc saida.c -o programa_gluglu
 
 # 3. Executa o binário final
 ./programa_gluglu
+```
+
+### 4. Testar Detecção de Erros Semânticos (Casos Inválidos)
+
+```bash
+# Teste 1: Identificador não declarado
+./glugluc < exemplos/erro_nao_declarada.glu
+
+# Teste 2: Atribuição entre tipos incompatíveis
+./glugluc < exemplos/erro_tipo_incompativel.glu
 ```
 
 ### Limpar os arquivos de build
@@ -285,7 +297,7 @@ glu: nota1 : real <- 8.5;
 glu: nota2 : real <- 7.0;
 glu: media : real <- (nota1 * 2.0 + nota2 * 3.0) / 5.0;
 
-GORGOREJA(<Media Ponderada: >);
+GORGOREJA(<Media Ponderada:>);
 GORGOREJA(media);
 ```
 
@@ -307,7 +319,7 @@ GORGOREJA(media);
                 [LIT_REAL] 3.000000 (double)
         [LIT_REAL] 5.000000 (double)
 [GORGOREJA]
-    [LIT_TEXTO] <Media Ponderada: > (char*)
+    [LIT_TEXTO] <Media Ponderada:> (char*)
 [GORGOREJA]
     [ID] media (double)
 ```
@@ -340,7 +352,7 @@ Media Ponderada:
 **Entrada (`exemplos/alimentacao.glu`):**
 ```gluglu
 NINHO alimentar_ave(texto ave, inteiro kg) {
-    GORGOREJA(<Alimentando >);
+    GORGOREJA(<Alimentando>);
     GORGOREJA(ave);
     GORGOREJA(< com >);
     GORGOREJA(kg);
