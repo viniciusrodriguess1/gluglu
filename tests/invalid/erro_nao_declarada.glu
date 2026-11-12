@@ -1,0 +1,9 @@
+%% Teste de Erro Semantico 1: Variavel Nao Declarada
+glu: contador : inteiro <- 0;
+
+WHILEGLU (contador < 5) {
+    contador <- contador + 1;
+    %% ERRO: 'resultado' nao foi declarada com 'glu:'
+    resultado <- contador * 2;
+    GORGOREJA(resultado);
+}

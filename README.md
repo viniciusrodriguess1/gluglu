@@ -217,13 +217,15 @@ expressao         ::= expressao ( "+" | "-" | "*" | "/" ) expressao
 │   ├── symtab.c                   # Lógica da Tabela de Símbolos e validações de tipo
 │   ├── lexer.l                    # Especificação léxica (Flex)
 │   └── parser.y                   # Gramática formal e ações sintático-semânticas (Bison)
-└── exemplos/
-    ├── media.glu                  # Programa 1: cálculo aritmético e saída
-    ├── idade.glu                  # Programa 2: entrada e decisão condicional
-    ├── contador.glu               # Programa 3: repetição WHILEGLU e interrupção com STOPGLU
-    ├── alimentacao.glu            # Programa 4: procedimento modular reutilizável (NINHO)
-    ├── erro_nao_declarada.glu     # Teste inválido 1: uso de variável não declarada
-    └── erro_tipo_incompativel.glu # Teste inválido 2: atribuição entre tipos incompatíveis
+├── exemplos/
+│   ├── media.glu                  # Programa 1: cálculo aritmético e saída
+│   ├── idade.glu                  # Programa 2: entrada e decisão condicional
+│   ├── contador.glu               # Programa 3: repetição WHILEGLU e interrupção com STOPGLU
+│   └── alimentacao.glu            # Programa 4: procedimento modular reutilizável (NINHO)
+└── tests/
+    └── invalid/
+        ├── erro_nao_declarada.glu     # Teste inválido: uso de variável não declarada
+        └── erro_tipo_incompativel.glu # Teste inválido: atribuição entre tipos incompatíveis
 ```
 
 ---
@@ -272,12 +274,20 @@ gcc saida.c -o programa_gluglu
 
 ### 4. Testar Detecção de Erros Semânticos (Casos Inválidos)
 
+Execute a suíte inicial, que também verifica os quatro exemplos válidos:
+
+```bash
+make test
+```
+
+Para executar os casos inválidos individualmente:
+
 ```bash
 # Teste 1: Identificador não declarado
-./glugluc < exemplos/erro_nao_declarada.glu
+./glugluc < tests/invalid/erro_nao_declarada.glu
 
 # Teste 2: Atribuição entre tipos incompatíveis
-./glugluc < exemplos/erro_tipo_incompativel.glu
+./glugluc < tests/invalid/erro_tipo_incompativel.glu
 ```
 
 ### Limpar os arquivos de build

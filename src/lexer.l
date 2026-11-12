@@ -53,6 +53,10 @@ static int can_be_relop = 0;
 "true"                  { can_be_relop = 1; yylval.num_int = 1; return LIT_BOOL; }
 "false"                 { can_be_relop = 1; yylval.num_int = 0; return LIT_BOOL; }
 
+"<-"/[ \t\r\n]*\<([^>\n]*)\> {
+                            can_be_relop = 0;
+                            return ATRIB;
+                        }
 "<-"                    { can_be_relop = 0; return ATRIB; }
 ":"                     { can_be_relop = 0; return ':'; }
 ";"                     { can_be_relop = 0; return ';'; }
