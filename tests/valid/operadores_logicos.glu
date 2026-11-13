@@ -1,0 +1,5 @@
+glu: conjuncao : booleano <- true and not false;
+glu: disjuncao : booleano <- false or true;
+
+GORGOREJA(conjuncao);
+GORGOREJA(disjuncao);

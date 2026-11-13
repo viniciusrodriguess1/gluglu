@@ -77,9 +77,9 @@ Toda variável deve ser obrigatoriamente declarada com seu tipo e inicializada n
 
 Da menor para a maior precedência:
 
-1. **Lógico OU:** `or` / `OR` (associativo à esquerda)
-2. **Lógico E:** `And` / `and` (associativo à esquerda)
-3. **Negação Lógica:** `not` / `NOT` (unário, associativo à direita)
+1. **Lógico OU:** `or` (associativo à esquerda)
+2. **Lógico E:** `and` (associativo à esquerda)
+3. **Negação Lógica:** `not` (unário, associativo à direita)
 4. **Igualdade / Diferença:** `==`, `!=` (associativos à esquerda)
 5. **Relacionais:** `<`, `>`, `<=`, `>=` (associativos à esquerda)
 6. **Aditivos:** `+`, `-` (associativos à esquerda)
@@ -189,8 +189,8 @@ lista_args        ::= expressao { "," expressao } ;
 
 expressao         ::= expressao ( "+" | "-" | "*" | "/" ) expressao
                     | expressao ( "<" | ">" | "<=" | ">=" | "==" | "!=" ) expressao
-                    | expressao ( "And" | "and" | "or" | "OR" ) expressao
-                    | ( "not" | "NOT" | "-" ) expressao
+                    | expressao ( "and" | "or" ) expressao
+                    | ( "not" | "-" ) expressao
                     | "(" expressao ")"
                     | LIT_INT | LIT_REAL | LIT_BOOL | LIT_TEXTO
                     | chamada_func | ID ;
@@ -214,6 +214,8 @@ expressao         ::= expressao ( "+" | "-" | "*" | "/" ) expressao
    Chamadas verificam se o identificador é função/procedimento e se a aridade e os tipos dos argumentos correspondem à declaração. `STOPGLU` e `PULAGLU` só podem aparecer dentro de laços, e `RETORNAGLU` precisa corresponder ao contexto de função ou procedimento.
 7. **Entrada e comparação de textos:**
    `CISCA` lê linhas de texto com armazenamento dinâmico. Os operadores `==` e `!=` comparam o conteúdo dos textos, não os endereços dos ponteiros C.
+8. **Grafia dos operadores lógicos:**
+   `and`, `or` e `not` são reconhecidos somente em letras minúsculas.
 
 ---
 
@@ -238,7 +240,8 @@ expressao         ::= expressao ( "+" | "-" | "*" | "/" ) expressao
 │   └── controle_funcao.glu        # CHOCA, RETORNAGLU, FORGLU e PULAGLU
 └── tests/
     ├── valid/
-    │   └── entrada_texto.glu       # Leitura dinâmica de linha e igualdade por conteúdo
+    │   ├── entrada_texto.glu       # Leitura dinâmica de linha e igualdade por conteúdo
+    │   └── operadores_logicos.glu  # Operadores and, or e not em minúsculas
     └── invalid/
         ├── erro_lexico.glu
         ├── erro_comentario_nao_fechado.glu
@@ -259,7 +262,10 @@ expressao         ::= expressao ( "+" | "-" | "*" | "/" ) expressao
         ├── erro_funcao_retorno_condicional.glu
         ├── erro_tipos_retorno.glu
         ├── erro_procedimento_como_expressao.glu
-        └── erro_subrotina_como_variavel.glu
+        ├── erro_subrotina_como_variavel.glu
+        ├── erro_and_maiuscula.glu
+        ├── erro_or_maiuscula.glu
+        └── erro_not_maiuscula.glu
 ```
 
 ---

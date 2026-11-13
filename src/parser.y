@@ -632,7 +632,7 @@ expressao:
     | expressao OP_GE expressao { $$ = create_bin_op(">=", check_rel_type(">=", $1->data_type, $3->data_type), $1, $3); }
     | expressao OP_EQ expressao { $$ = create_bin_op("==", check_rel_type("==", $1->data_type, $3->data_type), $1, $3); }
     | expressao OP_NE expressao { $$ = create_bin_op("!=", check_rel_type("!=", $1->data_type, $3->data_type), $1, $3); }
-    | expressao OP_AND expressao { $$ = create_bin_op("&&", check_logic_type("And", $1->data_type, $3->data_type), $1, $3); }
+    | expressao OP_AND expressao { $$ = create_bin_op("&&", check_logic_type("and", $1->data_type, $3->data_type), $1, $3); }
     | expressao OP_OR expressao  { $$ = create_bin_op("||", check_logic_type("or", $1->data_type, $3->data_type), $1, $3); }
     | OP_NOT expressao           { $$ = create_unary_op("!", check_logic_type("not", $2->data_type, TYPE_BOOLEANO), $2); }
     | '-' expressao %prec UMINUS { $$ = create_unary_op("-", infer_arith_type("-", $2->data_type, $2->data_type), $2); }

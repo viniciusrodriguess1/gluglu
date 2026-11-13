@@ -52,9 +52,9 @@ static int can_be_relop = 0;
 "NINHO"                 { can_be_relop = 0; return NINHO; }
 "RETORNAGLU"            { can_be_relop = 0; return RETORNAGLU; }
 
-"And"|"and"             { can_be_relop = 0; return OP_AND; }
-"or"|"OR"               { can_be_relop = 0; return OP_OR; }
-"not"|"NOT"             { can_be_relop = 0; return OP_NOT; }
+"and"                   { can_be_relop = 0; return OP_AND; }
+"or"                    { can_be_relop = 0; return OP_OR; }
+"not"                   { can_be_relop = 0; return OP_NOT; }
 
 "true"                  { can_be_relop = 1; yylval.num_int = 1; return LIT_BOOL; }
 "false"                 { can_be_relop = 1; yylval.num_int = 0; return LIT_BOOL; }
