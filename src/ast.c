@@ -68,15 +68,44 @@ static void emit_indent(FILE *out, int indent) {
     }
 }
 
+static void emit_identifier(FILE *out, const char *name) {
+    fprintf(out, "gluglu_user_%s", name);
+}
+
+static void emit_c_string(FILE *out, const char *value) {
+    fputc('"', out);
+    for (const unsigned char *ch = (const unsigned char *)value; *ch; ch++) {
+        switch (*ch) {
+            case '"':  fputs("\\\"", out); break;
+            case '\\': fputs("\\\\", out); break;
+            case '\n': fputs("\\n", out); break;
+            case '\r': fputs("\\r", out); break;
+            case '\t': fputs("\\t", out); break;
+            default:   fputc(*ch, out); break;
+        }
+    }
+    fputc('"', out);
+}
+
 static void emit_expr(ASTNode *node, FILE *out) {
     if (!node) return;
     switch (node->type) {
         case NODE_NUM_INT:  fprintf(out, "%d", node->int_val); break;
         case NODE_NUM_REAL: fprintf(out, "%f", node->real_val); break;
         case NODE_BOOL:     fprintf(out, "%s", node->int_val ? "true" : "false"); break;
-        case NODE_STRING:   fprintf(out, "\"%s\"", node->name); break;
-        case NODE_ID:       fprintf(out, "%s", node->name); break;
+        case NODE_STRING:   emit_c_string(out, node->name); break;
+        case NODE_ID:       emit_identifier(out, node->name); break;
         case NODE_BIN_OP:
+            if ((strcmp(node->op, "==") == 0 || strcmp(node->op, "!=") == 0) &&
+                node->left->data_type == TYPE_TEXTO &&
+                node->right->data_type == TYPE_TEXTO) {
+                fprintf(out, "(strcmp(");
+                emit_expr(node->left, out);
+                fprintf(out, ", ");
+                emit_expr(node->right, out);
+                fprintf(out, ") %s 0)", strcmp(node->op, "==") == 0 ? "==" : "!=");
+                break;
+            }
             fprintf(out, "(");
             emit_expr(node->left, out);
             fprintf(out, " %s ", node->op);
@@ -89,7 +118,8 @@ static void emit_expr(ASTNode *node, FILE *out) {
             fprintf(out, ")");
             break;
         case NODE_FUNC_CALL: {
-            fprintf(out, "%s(", node->name);
+            emit_identifier(out, node->name);
+            fprintf(out, "(");
             ASTNode *arg = node->left;
             while (arg) {
                 emit_expr(arg, out);
@@ -106,10 +136,13 @@ static void emit_expr(ASTNode *node, FILE *out) {
 static void emit_stmt_inline(ASTNode *node, FILE *out) {
     if (!node) return;
     if (node->type == NODE_VAR_DECL) {
-        fprintf(out, "%s %s = ", node->name, node->left->name);
+        fprintf(out, "%s ", node->name);
+        emit_identifier(out, node->left->name);
+        fprintf(out, " = ");
         emit_expr(node->right, out);
     } else if (node->type == NODE_ASSIGN) {
-        fprintf(out, "%s = ", node->left->name);
+        emit_identifier(out, node->left->name);
+        fprintf(out, " = ");
         emit_expr(node->right, out);
     }
 }
@@ -119,14 +152,17 @@ static void emit_stmt_list(ASTNode *curr, FILE *out, int indent) {
         switch (curr->type) {
             case NODE_VAR_DECL:
                 emit_indent(out, indent);
-                fprintf(out, "%s %s = ", curr->name, curr->left->name);
+                fprintf(out, "%s ", curr->name);
+                emit_identifier(out, curr->left->name);
+                fprintf(out, " = ");
                 emit_expr(curr->right, out);
                 fprintf(out, ";\n");
                 break;
 
             case NODE_ASSIGN:
                 emit_indent(out, indent);
-                fprintf(out, "%s = ", curr->left->name);
+                emit_identifier(out, curr->left->name);
+                fprintf(out, " = ");
                 emit_expr(curr->right, out);
                 fprintf(out, ";\n");
                 break;
@@ -134,7 +170,9 @@ static void emit_stmt_list(ASTNode *curr, FILE *out, int indent) {
             case NODE_PRINT:
                 emit_indent(out, indent);
                 if (curr->left->type == NODE_STRING) {
-                    fprintf(out, "printf(\"%%s\\n\", \"%s\");\n", curr->left->name);
+                    fprintf(out, "printf(\"%%s\\n\", ");
+                    emit_c_string(out, curr->left->name);
+                    fprintf(out, ");\n");
                 } else if (curr->left->data_type == TYPE_TEXTO) {
                     fprintf(out, "printf(\"%%s\\n\", ");
                     emit_expr(curr->left, out);
@@ -157,11 +195,17 @@ static void emit_stmt_list(ASTNode *curr, FILE *out, int indent) {
             case NODE_READ:
                 emit_indent(out, indent);
                 if (curr->left->data_type == TYPE_REAL) {
-                    fprintf(out, "scanf(\"%%lf\", &%s);\n", curr->left->name);
+                    emit_identifier(out, curr->left->name);
+                    fprintf(out, " = gluglu_read_real();\n");
                 } else if (curr->left->data_type == TYPE_TEXTO) {
-                    fprintf(out, "scanf(\"%%s\", %s);\n", curr->left->name);
+                    emit_identifier(out, curr->left->name);
+                    fprintf(out, " = gluglu_read_text();\n");
+                } else if (curr->left->data_type == TYPE_BOOLEANO) {
+                    emit_identifier(out, curr->left->name);
+                    fprintf(out, " = gluglu_read_bool();\n");
                 } else {
-                    fprintf(out, "scanf(\"%%d\", &%s);\n", curr->left->name);
+                    emit_identifier(out, curr->left->name);
+                    fprintf(out, " = gluglu_read_int();\n");
                 }
                 break;
 
@@ -253,16 +297,115 @@ static void emit_stmt_list(ASTNode *curr, FILE *out, int indent) {
 void generate_code(ASTNode *root, FILE *out) {
     if (!root) return;
 
-    fprintf(out, "#include <stdio.h>\n#include <stdbool.h>\n\n");
+    fprintf(out,
+            "#include <ctype.h>\n"
+            "#include <errno.h>\n"
+            "#include <limits.h>\n"
+            "#include <stdbool.h>\n"
+            "#include <stdint.h>\n"
+            "#include <stdio.h>\n"
+            "#include <stdlib.h>\n"
+            "#include <string.h>\n\n"
+            "static inline void gluglu_input_error(const char *type) {\n"
+            "    fprintf(stderr, \"Erro: entrada invalida para %%s.\\n\", type);\n"
+            "    exit(EXIT_FAILURE);\n"
+            "}\n\n"
+            "static inline void gluglu_memory_error(void) {\n"
+            "    fputs(\"Erro: memoria insuficiente ao ler entrada.\\n\", stderr);\n"
+            "    exit(EXIT_FAILURE);\n"
+            "}\n\n"
+            "static inline char *gluglu_read_line(void) {\n"
+            "    size_t capacity = 64;\n"
+            "    size_t length = 0;\n"
+            "    char *line = (char *)malloc(capacity);\n"
+            "    if (!line) gluglu_memory_error();\n"
+            "    int ch;\n"
+            "    while ((ch = getchar()) != '\\n' && ch != EOF) {\n"
+            "        if (length + 1 >= capacity) {\n"
+            "            if (capacity > SIZE_MAX / 2) {\n"
+            "                free(line);\n"
+            "                gluglu_memory_error();\n"
+            "            }\n"
+            "            capacity *= 2;\n"
+            "            char *grown = (char *)realloc(line, capacity);\n"
+            "            if (!grown) {\n"
+            "                free(line);\n"
+            "                gluglu_memory_error();\n"
+            "            }\n"
+            "            line = grown;\n"
+            "        }\n"
+            "        line[length++] = (char)ch;\n"
+            "    }\n"
+            "    if (ch == EOF && length == 0) {\n"
+            "        free(line);\n"
+            "        return NULL;\n"
+            "    }\n"
+            "    if (length > 0 && line[length - 1] == '\\r') length--;\n"
+            "    line[length] = '\\0';\n"
+            "    return line;\n"
+            "}\n\n"
+            "static inline int gluglu_read_int(void) {\n"
+            "    char *line = gluglu_read_line();\n"
+            "    if (!line) gluglu_input_error(\"inteiro\");\n"
+            "    char *end;\n"
+            "    errno = 0;\n"
+            "    long value = strtol(line, &end, 10);\n"
+            "    while (isspace((unsigned char)*end)) end++;\n"
+            "    if (errno == ERANGE || end == line || *end != '\\0' || value < INT_MIN || value > INT_MAX) {\n"
+            "        free(line);\n"
+            "        gluglu_input_error(\"inteiro\");\n"
+            "    }\n"
+            "    free(line);\n"
+            "    return (int)value;\n"
+            "}\n\n"
+            "static inline double gluglu_read_real(void) {\n"
+            "    char *line = gluglu_read_line();\n"
+            "    if (!line) gluglu_input_error(\"real\");\n"
+            "    char *end;\n"
+            "    errno = 0;\n"
+            "    double value = strtod(line, &end);\n"
+            "    while (isspace((unsigned char)*end)) end++;\n"
+            "    if (errno == ERANGE || end == line || *end != '\\0') {\n"
+            "        free(line);\n"
+            "        gluglu_input_error(\"real\");\n"
+            "    }\n"
+            "    free(line);\n"
+            "    return value;\n"
+            "}\n\n"
+            "static inline bool gluglu_read_bool(void) {\n"
+            "    char *line = gluglu_read_line();\n"
+            "    if (!line) gluglu_input_error(\"booleano\");\n"
+            "    char *start = line;\n"
+            "    while (isspace((unsigned char)*start)) start++;\n"
+            "    char *end = start + strlen(start);\n"
+            "    while (end > start && isspace((unsigned char)end[-1])) *--end = '\\0';\n"
+            "    bool value;\n"
+            "    if (strcmp(start, \"true\") == 0 || strcmp(start, \"1\") == 0) value = true;\n"
+            "    else if (strcmp(start, \"false\") == 0 || strcmp(start, \"0\") == 0) value = false;\n"
+            "    else {\n"
+            "        free(line);\n"
+            "        gluglu_input_error(\"booleano\");\n"
+            "    }\n"
+            "    free(line);\n"
+            "    return value;\n"
+            "}\n\n"
+            "static inline char *gluglu_read_text(void) {\n"
+            "    char *line = gluglu_read_line();\n"
+            "    if (!line) gluglu_input_error(\"texto\");\n"
+            "    return line;\n"
+            "}\n\n");
 
     // 1. Emite definições de funções e procedimentos (CHOCA / NINHO) no escopo global
     ASTNode *curr = root;
     while (curr) {
         if (curr->type == NODE_FUNC_DECL) {
-            fprintf(out, "%s %s(", datatype_to_str(curr->data_type), curr->name);
+            fprintf(out, "%s ", datatype_to_str(curr->data_type));
+            emit_identifier(out, curr->name);
+            fprintf(out, "(");
             ASTNode *param = curr->extra;
             while (param) {
-                fprintf(out, "%s %s", datatype_to_str(param->data_type), param->name);
+                fprintf(out, "%s ", datatype_to_str(param->data_type));
+                emit_identifier(out, param->name);
                 if (param->next) fprintf(out, ", ");
                 param = param->next;
             }

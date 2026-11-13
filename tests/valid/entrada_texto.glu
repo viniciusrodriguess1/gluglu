@@ -1,0 +1,20 @@
+glu: quantidade : inteiro <- 0;
+glu: medida : real <- 0.0;
+glu: ativo : booleano <- false;
+glu: gluglu_read_text : texto <- <>;
+glu: esperado : texto <- <Esta linha de entrada tem espacos e mais de sessenta e quatro caracteres para validar o crescimento dinamico do buffer com seguranca.>;
+
+CISCA(quantidade);
+CISCA(medida);
+CISCA(ativo);
+GORGOREJA(<Digite uma frase: >);
+CISCA(gluglu_read_text);
+GORGOREJA(quantidade);
+GORGOREJA(medida);
+GORGOREJA(ativo);
+GORGOREJA(gluglu_read_text);
+GORGOREJA(<Escapes: "aspas" e barra \>);
+
+IFGLU (gluglu_read_text == esperado) {
+    GORGOREJA(<Conteudo igual.>);
+}

@@ -1,0 +1,2 @@
+glu: idade : inteiro <- 20;
+idade();

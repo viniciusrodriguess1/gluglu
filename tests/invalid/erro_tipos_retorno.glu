@@ -1,0 +1,7 @@
+CHOCA retorno_incompativel(booleano condicao) {
+    IFGLU (condicao) {
+        RETORNAGLU 1;
+    } ELSEGLU {
+        RETORNAGLU <texto>;
+    }
+}

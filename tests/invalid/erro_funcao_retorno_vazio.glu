@@ -1,0 +1,3 @@
+CHOCA retorno_vazio() {
+    RETORNAGLU;
+}

@@ -30,6 +30,7 @@ static void scope_destroy(Scope *scope) {
         while (curr) {
             Symbol *next = curr->next;
             free(curr->name);
+            free(curr->param_types);
             free(curr);
             curr = next;
         }
@@ -113,10 +114,28 @@ bool symtab_insert(SymbolTable *st, const char *name, DataType type, SymbolKind 
     sym->name = strdup(name);
     sym->type = type;
     sym->kind = kind;
+    sym->param_types = NULL;
+    sym->param_count = 0;
     sym->scope_level = scope->level;
     sym->is_initialized = true;
     sym->next = scope->buckets[idx];
     scope->buckets[idx] = sym;
+    return true;
+}
+
+bool symtab_set_signature(Symbol *symbol, const DataType *param_types, size_t param_count) {
+    if (!symbol || (param_count > 0 && !param_types)) return false;
+
+    DataType *types = NULL;
+    if (param_count > 0) {
+        types = (DataType *)malloc(param_count * sizeof(DataType));
+        if (!types) return false;
+        memcpy(types, param_types, param_count * sizeof(DataType));
+    }
+
+    free(symbol->param_types);
+    symbol->param_types = types;
+    symbol->param_count = param_count;
     return true;
 }
 

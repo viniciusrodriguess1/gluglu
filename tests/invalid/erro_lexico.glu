@@ -1,0 +1,3 @@
+glu: valor : inteiro <- 1;
+@
+GORGOREJA(valor);

@@ -1,0 +1,5 @@
+CHOCA retorno_condicional(booleano condicao) {
+    IFGLU (condicao) {
+        RETORNAGLU 1;
+    }
+}

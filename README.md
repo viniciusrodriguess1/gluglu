@@ -16,13 +16,17 @@ Implementação do tradutor/compilador da linguagem **GLUGLU**, desenvolvido com
 
 Este projeto implementa um **tradutor (transpilador) completo** para a linguagem didática **GLUGLU**. O compilador processa o código-fonte `.glu`, executa as fases clássicas de compilação (léxica, sintática, semântica e construção de AST) e emite código equivalente em **C estruturado (C99/C11)**, pronto para ser compilado por `gcc` ou `clang`.
 
+### Justificativa da Linguagem de Destino
+
+O C foi escolhido por mapear diretamente os tipos estáticos e as estruturas imperativas da GLUGLU, produzir código nativo compilável com ferramentas amplamente disponíveis (`gcc` e `clang`) e permitir inspecionar o resultado da tradução. A escolha deve constar na proposta inicial e ser aprovada pelo professor; a aprovação é uma etapa acadêmica externa ao repositório.
+
 ### Progresso da Implementação
 
 | Etapa / Componente | Status | Arquivo(s) Principal(is) | Descrição |
 | :--- | :---: | :--- | :--- |
 | **1. Análise Léxica (Scanner)** | ✅ Concluído | `src/lexer.l` | Reconhecimento de tokens, literais, palavras-chave, comentários (`%%` e `%glu`) e desambiguação léxica com Flex. |
 | **2. Análise Sintática (Parser)** | ✅ Concluído | `src/parser.y` | Gramática LALR(1) em Bison com precedência de operadores, controle de fluxo e sub-rotinas. |
-| **3. Tabela de Símbolos e Semântica** | ✅ Concluído | `src/symtab.h`, `src/symtab.c`, `src/parser.y` | Escopos aninhados via tabela hash (`djb2`), verificação de declaração/redeclaração, checagem de tipos e coerção `inteiro` $\to$ `real`. |
+| **3. Tabela de Símbolos e Semântica** | ✅ Concluído | `src/symtab.h`, `src/symtab.c`, `src/parser.y` | Escopos aninhados, declarações, tipos, assinaturas de sub-rotinas, retornos e contexto de laços. |
 | **4. Construção e Impressão da AST** | ✅ Concluído | `src/ast.h`, `src/ast.c` | Construção da Árvore Sintática Abstrata tipada em memória e visualização hierárquica via flag `--ast`. |
 | **5. Geração de Código Alvo (C)** | ✅ Concluído | `src/ast.c` | Travessia da AST emitindo código C estruturado com funções no escopo global e bloco principal em `main()`. |
 
@@ -37,7 +41,7 @@ A **GLUGLU** é uma linguagem imperativa, de tipagem estática e forte, com sint
 * `inteiro`: Números inteiros (ex: `0`, `42`, `-10`) $\to$ mapeado para `int` em C.
 * `real`: Números de ponto flutuante com notação decimal obrigatória (ex: `3.14`, `0.5`) $\to$ mapeado para `double` em C.
 * `booleano`: Valores lógicos literais (`true` e `false`) $\to$ mapeado para `bool` (`<stdbool.h>`) em C.
-* `texto`: Sequências de caracteres delimitadas por `<` e `>` (ex: `<Olá, GLUGLU!>`) $\to$ mapeado para `char*` em C.
+* `texto`: Sequências de caracteres delimitadas por `<` e `>` (ex: `<Olá, GLUGLU!>`) $\to$ mapeado para `char*` em C. A igualdade e a diferença entre textos comparam o conteúdo.
 
 ### 2. Comentários
 
@@ -89,10 +93,12 @@ Da menor para a maior precedência:
   GORGOREJA(<Resultado:>);
   GORGOREJA(media);
   ```
-* **Entrada (`CISCA`):** Lê valores fornecidos pelo usuário via console para uma variável previamente declarada.
+* **Entrada (`CISCA`):** Lê uma linha por chamada para uma variável previamente declarada. Para `texto`, aceita espaços e aumenta o armazenamento dinamicamente; valores numéricos e booleanos são validados antes da conversão.
   ```gluglu
   CISCA(idade);
+  CISCA(mensagem);
   ```
+  Valores booleanos podem ser informados como `true`/`false` ou `1`/`0`.
 
 ### 6. Estruturas de Controle de Fluxo
 
@@ -135,6 +141,9 @@ Da menor para a maior precedência:
       RETORNAGLU valor * 2;
   }
   ```
+  Uma função deve retornar um valor em todos os caminhos. Procedimentos não retornam valores; chamadas verificam a espécie da sub-rotina, a quantidade e os tipos dos argumentos.
+
+* **Exemplo combinado:** [exemplos/controle_funcao.glu](./exemplos/controle_funcao.glu) demonstra `CHOCA`, `RETORNAGLU`, `FORGLU` e `PULAGLU`.
 
 ---
 
@@ -200,7 +209,11 @@ expressao         ::= expressao ( "+" | "-" | "*" | "/" ) expressao
    * Variáveis do tipo `real` aceitam valores do tipo `inteiro` (promoção implícita), mas variáveis `inteiro` rejeitam `real` para evitar perda silenciosa de precisão.
    * Condições de `IFGLU`, `WHILEGLU` e `FORGLU` exigem expressões do tipo `booleano`.
 5. **Inferência de Tipo de Retorno em `CHOCA`:**
-   Funções declaradas com `CHOCA` têm seu tipo de retorno inferido automaticamente a partir das instruções `RETORNAGLU` presentes em seu corpo (`infer_return_type`), atualizando a assinatura na Tabela de Símbolos e no código C emitido.
+   Funções declaradas com `CHOCA` têm seu tipo de retorno inferido a partir das instruções `RETORNAGLU`; retornos incompatíveis e caminhos sem retorno são rejeitados.
+6. **Validação de sub-rotinas e laços:**
+   Chamadas verificam se o identificador é função/procedimento e se a aridade e os tipos dos argumentos correspondem à declaração. `STOPGLU` e `PULAGLU` só podem aparecer dentro de laços, e `RETORNAGLU` precisa corresponder ao contexto de função ou procedimento.
+7. **Entrada e comparação de textos:**
+   `CISCA` lê linhas de texto com armazenamento dinâmico. Os operadores `==` e `!=` comparam o conteúdo dos textos, não os endereços dos ponteiros C.
 
 ---
 
@@ -221,11 +234,31 @@ expressao         ::= expressao ( "+" | "-" | "*" | "/" ) expressao
 │   ├── media.glu                  # Programa 1: cálculo aritmético e saída
 │   ├── idade.glu                  # Programa 2: entrada e decisão condicional
 │   ├── contador.glu               # Programa 3: repetição WHILEGLU e interrupção com STOPGLU
-│   └── alimentacao.glu            # Programa 4: procedimento modular reutilizável (NINHO)
+│   ├── alimentacao.glu            # Programa 4: procedimento modular reutilizável (NINHO)
+│   └── controle_funcao.glu        # CHOCA, RETORNAGLU, FORGLU e PULAGLU
 └── tests/
+    ├── valid/
+    │   └── entrada_texto.glu       # Leitura dinâmica de linha e igualdade por conteúdo
     └── invalid/
-        ├── erro_nao_declarada.glu     # Teste inválido: uso de variável não declarada
-        └── erro_tipo_incompativel.glu # Teste inválido: atribuição entre tipos incompatíveis
+        ├── erro_lexico.glu
+        ├── erro_comentario_nao_fechado.glu
+        ├── erro_sintatico.glu
+        ├── erro_nao_declarada.glu
+        ├── erro_tipo_incompativel.glu
+        ├── erro_condicao_nao_booleana.glu
+        ├── erro_redeclaracao.glu
+        ├── erro_chamada_variavel.glu
+        ├── erro_aridade.glu
+        ├── erro_tipo_argumento.glu
+        ├── erro_stop_fora_laco.glu
+        ├── erro_pula_fora_laco.glu
+        ├── erro_retorno_fora_subrotina.glu
+        ├── erro_retorno_em_procedimento.glu
+        ├── erro_funcao_retorno_vazio.glu
+        ├── erro_funcao_sem_retorno.glu
+        ├── erro_funcao_retorno_condicional.glu
+        ├── erro_tipos_retorno.glu
+        └── erro_procedimento_como_expressao.glu
 ```
 
 ---
@@ -272,22 +305,21 @@ gcc saida.c -o programa_gluglu
 ./programa_gluglu
 ```
 
-### 4. Testar Detecção de Erros Semânticos (Casos Inválidos)
+### 4. Verificar os Exemplos Manualmente
 
-Execute a suíte inicial, que também verifica os quatro exemplos válidos:
-
-```bash
-make test
-```
-
-Para executar os casos inválidos individualmente:
+Os programas de demonstração estão em `exemplos/`, e os casos válidos e inválidos para conferência manual estão em `tests/valid/` e `tests/invalid/`. Não há uma suíte automatizada: compile o tradutor e teste cada arquivo conforme necessário.
 
 ```bash
-# Teste 1: Identificador não declarado
-./glugluc < tests/invalid/erro_nao_declarada.glu
+# Compile o tradutor
+make
 
-# Teste 2: Atribuição entre tipos incompatíveis
-./glugluc < tests/invalid/erro_tipo_incompativel.glu
+# Caso válido: traduza, compile o C gerado e execute
+./glugluc < exemplos/media.glu > saida.c
+gcc -std=c99 saida.c -o programa_gluglu
+./programa_gluglu
+
+# Caso inválido: confira se o tradutor apresenta o erro esperado
+./glugluc < tests/invalid/erro_lexico.glu
 ```
 
 ### Limpar os arquivos de build
@@ -334,17 +366,14 @@ GORGOREJA(media);
     [ID] media (double)
 ```
 
-**Código C Emitido (`./glugluc < exemplos/media.glu`):**
+**Trecho principal do C emitido** (o tradutor também inclui funções auxiliares de entrada):
 ```c
-#include <stdio.h>
-#include <stdbool.h>
-
 int main() {
-    double nota1 = 8.500000;
-    double nota2 = 7.000000;
-    double media = (((nota1 * 2.000000) + (nota2 * 3.000000)) / 5.000000);
+    double gluglu_user_nota1 = 8.500000;
+    double gluglu_user_nota2 = 7.000000;
+    double gluglu_user_media = (((gluglu_user_nota1 * 2.000000) + (gluglu_user_nota2 * 3.000000)) / 5.000000);
     printf("%s\n", "Media Ponderada: ");
-    printf("%f\n", (double)(media));
+    printf("%f\n", (double)(gluglu_user_media));
     return 0;
 }
 ```
@@ -373,22 +402,19 @@ alimentar_ave(<Pavoa>, 3);
 alimentar_ave(<Galo>, 2);
 ```
 
-**Código C Emitido (`./glugluc < exemplos/alimentacao.glu`):**
+**Trecho principal do C emitido** (os nomes GLUGLU recebem o prefixo `gluglu_user_` no C):
 ```c
-#include <stdio.h>
-#include <stdbool.h>
-
-void alimentar_ave(char* ave, int kg) {
+void gluglu_user_alimentar_ave(char* gluglu_user_ave, int gluglu_user_kg) {
     printf("%s\n", "Alimentando ");
-    printf("%s\n", ave);
+    printf("%s\n", gluglu_user_ave);
     printf("%s\n", " com ");
-    printf("%d\n", kg);
+    printf("%d\n", gluglu_user_kg);
     printf("%s\n", " kg de milho.");
 }
 
 int main() {
-    alimentar_ave("Pavoa", 3);
-    alimentar_ave("Galo", 2);
+    gluglu_user_alimentar_ave("Pavoa", 3);
+    gluglu_user_alimentar_ave("Galo", 2);
     return 0;
 }
 ```

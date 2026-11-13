@@ -2,6 +2,7 @@
 #define SYMTAB_H
 
 #include <stdbool.h>
+#include <stddef.h>
 
 typedef enum {
     TYPE_UNKNOWN = 0,
@@ -22,6 +23,8 @@ typedef struct Symbol {
     char *name;
     DataType type;
     SymbolKind kind;
+    DataType *param_types;
+    size_t param_count;
     int scope_level;
     bool is_initialized;
     struct Symbol *next; // Tratamento de colisões por encadeamento
@@ -49,6 +52,7 @@ void symtab_exit_scope(SymbolTable *st);
 
 // Inserção e buscas
 bool symtab_insert(SymbolTable *st, const char *name, DataType type, SymbolKind kind);
+bool symtab_set_signature(Symbol *symbol, const DataType *param_types, size_t param_count);
 Symbol *symtab_lookup(SymbolTable *st, const char *name);
 Symbol *symtab_lookup_current_scope(SymbolTable *st, const char *name);
 

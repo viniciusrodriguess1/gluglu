@@ -1,0 +1,10 @@
+CHOCA dobro(inteiro valor) {
+    RETORNAGLU valor * 2;
+}
+
+FORGLU (glu: i : inteiro <- 0; i < 6; i <- i + 1) {
+    IFGLU (i == 2) {
+        PULAGLU;
+    }
+    GORGOREJA(dobro(i));
+}

@@ -1,0 +1,5 @@
+NINHO procedimento() {
+    GORGOREJA(1);
+}
+
+GORGOREJA(procedimento());

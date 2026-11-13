@@ -27,6 +27,12 @@ static int can_be_relop = 0;
 <MULTI_COMMENT>"%glu"   { BEGIN(INITIAL); }
 <MULTI_COMMENT>\n       ;
 <MULTI_COMMENT>.        ;
+<MULTI_COMMENT><<EOF>>  {
+                            fprintf(stderr, "Erro lexico na linha %d: comentario multilinha nao fechado.\n", yylineno);
+                            lexical_errors++;
+                            BEGIN(INITIAL);
+                            return 0;
+                        }
 
 "glu"                   { can_be_relop = 0; return GLU; }
 "inteiro"               { can_be_relop = 0; yylval.data_type = TYPE_INTEIRO; return TIPO; }

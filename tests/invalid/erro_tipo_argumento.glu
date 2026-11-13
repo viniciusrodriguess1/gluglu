@@ -1,0 +1,5 @@
+NINHO exibir(inteiro valor) {
+    GORGOREJA(valor);
+}
+
+exibir(<nao e inteiro>);
