@@ -258,7 +258,8 @@ expressao         ::= expressao ( "+" | "-" | "*" | "/" ) expressao
         ├── erro_funcao_sem_retorno.glu
         ├── erro_funcao_retorno_condicional.glu
         ├── erro_tipos_retorno.glu
-        └── erro_procedimento_como_expressao.glu
+        ├── erro_procedimento_como_expressao.glu
+        └── erro_subrotina_como_variavel.glu
 ```
 
 ---

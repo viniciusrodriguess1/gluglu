@@ -1,0 +1,5 @@
+CHOCA dobro(inteiro valor) {
+    RETORNAGLU valor * 2;
+}
+
+dobro <- 10;

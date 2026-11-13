@@ -406,6 +406,9 @@ atribuicao:
         if (!sym) {
             fprintf(stderr, "Erro semantico na linha %d: identificador '%s' nao declarado.\n", yylineno, $1);
             semantic_errors++;
+        } else if (sym->kind != SYM_VAR) {
+            fprintf(stderr, "Erro semantico na linha %d: identificador '%s' nao e uma variavel.\n", yylineno, $1);
+            semantic_errors++;
         } else {
             var_type = sym->type;
             if ($3->data_type != TYPE_UNKNOWN && !is_type_compatible(var_type, $3->data_type)) {
@@ -437,6 +440,9 @@ comando_entrada:
         DataType var_type = TYPE_INTEIRO;
         if (!sym) {
             fprintf(stderr, "Erro semantico na linha %d: identificador '%s' nao declarado.\n", yylineno, $3);
+            semantic_errors++;
+        } else if (sym->kind != SYM_VAR) {
+            fprintf(stderr, "Erro semantico na linha %d: identificador '%s' nao e uma variavel.\n", yylineno, $3);
             semantic_errors++;
         } else {
             var_type = sym->type;
@@ -647,6 +653,9 @@ expressao:
         DataType var_type = TYPE_UNKNOWN;
         if (!sym) {
             fprintf(stderr, "Erro semantico na linha %d: identificador '%s' nao declarado.\n", yylineno, $1);
+            semantic_errors++;
+        } else if (sym->kind != SYM_VAR) {
+            fprintf(stderr, "Erro semantico na linha %d: identificador '%s' nao e uma variavel.\n", yylineno, $1);
             semantic_errors++;
         } else {
             var_type = sym->type;
