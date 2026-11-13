@@ -1,0 +1,8 @@
+%% Teste de Erro Semântico 2: Incompatibilidade de Tipos
+glu: idade : inteiro <- 20;
+glu: mensagem : texto <- <Engenharia>;
+
+%% ERRO: Atribuindo 'texto' a uma variável do tipo 'inteiro'
+idade <- mensagem;
+
+GORGOREJA(idade);
