@@ -1,11 +1,25 @@
 %{
 #include "symtab.h"
 #include "ast.h"
+#include "lexer.h"
 #include "parser.tab.h"
+#include <errno.h>
+#include <limits.h>
 #include <stdlib.h>
 #include <string.h>
 
-extern int lexical_errors;
+int lexical_errors = 0;
+int token_column = 1;
+
+static int yycolumn = 1;
+static int text_start_line = 1;
+static int text_start_col = 1;
+static int comment_start_line = 1;
+static int comment_start_col = 1;
+
+#define YY_USER_ACTION \
+    token_column = yycolumn; \
+    yycolumn += yyleng;
 
 typedef enum {
     LEX_CTX_EXPR_START = 0,
@@ -60,6 +74,77 @@ static char *text_buf_take(void) {
     text_cap = 0;
     return result;
 }
+
+static int parse_int_literal(const char *text) {
+    char *end = NULL;
+    errno = 0;
+    long value = strtol(text, &end, 10);
+    if (errno == ERANGE || !end || *end != '\0' || value < INT_MIN || value > INT_MAX) {
+        fprintf(stderr, "Erro lexico na linha %d, coluna %d: literal inteiro '%s' fora da faixa suportada.\n",
+                yylineno, token_column, text);
+        lexical_errors++;
+        return 0;
+    }
+    return (int)value;
+}
+
+static double parse_real_literal(const char *text) {
+    char *end = NULL;
+    errno = 0;
+    double value = strtod(text, &end);
+    if (errno == ERANGE || !end || *end != '\0') {
+        fprintf(stderr, "Erro lexico na linha %d, coluna %d: literal real '%s' fora da faixa suportada.\n",
+                yylineno, token_column, text);
+        lexical_errors++;
+        return 0.0;
+    }
+    return value;
+}
+
+const char *lexer_token_name(int token) {
+    switch (token) {
+        case ID:            return "ID";
+        case TIPO:          return "TIPO";
+        case LIT_INT:       return "LIT_INT";
+        case LIT_REAL:      return "LIT_REAL";
+        case LIT_BOOL:      return "LIT_BOOL";
+        case LIT_TEXTO:     return "LIT_TEXTO";
+        case GLU:           return "GLU";
+        case ATRIB:         return "ATRIB";
+        case GORGOREJA:     return "GORGOREJA";
+        case CISCA:         return "CISCA";
+        case IFGLU:         return "IFGLU";
+        case ELSEGLU:       return "ELSEGLU";
+        case WHILEGLU:      return "WHILEGLU";
+        case FORGLU:        return "FORGLU";
+        case STOPGLU:       return "STOPGLU";
+        case PULAGLU:       return "PULAGLU";
+        case CHOCA:         return "CHOCA";
+        case NINHO:         return "NINHO";
+        case RETORNAGLU:    return "RETORNAGLU";
+        case DOIS_PONTOS:   return "DOIS_PONTOS";
+        case PONTO_VIRGULA: return "PONTO_VIRGULA";
+        case VIRGULA:       return "VIRGULA";
+        case ABRE_CHAVE:    return "ABRE_CHAVE";
+        case FECHA_CHAVE:   return "FECHA_CHAVE";
+        case ABRE_PAREN:    return "ABRE_PAREN";
+        case FECHA_PAREN:   return "FECHA_PAREN";
+        case OP_MAIS:       return "OP_MAIS";
+        case OP_MENOS:      return "OP_MENOS";
+        case OP_MULT:       return "OP_MULT";
+        case OP_DIV:        return "OP_DIV";
+        case OP_MENOR:      return "OP_MENOR";
+        case OP_MAIOR:      return "OP_MAIOR";
+        case OP_LE:         return "OP_LE";
+        case OP_GE:         return "OP_GE";
+        case OP_EQ:         return "OP_EQ";
+        case OP_NE:         return "OP_NE";
+        case OP_AND:        return "OP_AND";
+        case OP_OR:         return "OP_OR";
+        case OP_NOT:        return "OP_NOT";
+        default:            return "DESCONHECIDO";
+    }
+}
 %}
 
 %option noyywrap
@@ -73,16 +158,21 @@ static char *text_buf_take(void) {
 %%
 
 [ \t\r]+                ; /* Ignora espacos e tabs */
-\n                      ;
+\n                      { yycolumn = 1; }
 
 "%%".*                  ; /* Comentario de linha unica */
 
-"%glu"                  { BEGIN(MULTI_COMMENT); }
+"%glu"                  {
+                            comment_start_line = yylineno;
+                            comment_start_col = token_column;
+                            BEGIN(MULTI_COMMENT);
+                        }
 <MULTI_COMMENT>"%glu"   { BEGIN(INITIAL); }
-<MULTI_COMMENT>\n       ;
+<MULTI_COMMENT>\n       { yycolumn = 1; }
 <MULTI_COMMENT>.        ;
 <MULTI_COMMENT><<EOF>>  {
-                            fprintf(stderr, "Erro lexico na linha %d: comentario multilinha nao fechado.\n", yylineno);
+                            fprintf(stderr, "Erro lexico na linha %d, coluna %d: comentario multilinha nao fechado.\n",
+                                    comment_start_line, comment_start_col);
                             lexical_errors++;
                             BEGIN(INITIAL);
                             return 0;
@@ -90,6 +180,7 @@ static char *text_buf_take(void) {
 
 <TEXT_LIT>">"           {
                             yylval.str = text_buf_take();
+                            token_column = text_start_col;
                             lex_ctx = LEX_CTX_AFTER_VALUE;
                             BEGIN(INITIAL);
                             return LIT_TEXTO;
@@ -99,14 +190,17 @@ static char *text_buf_take(void) {
                         }
 <TEXT_LIT>\n            {
                             text_buf_reset();
-                            fprintf(stderr, "Erro lexico na linha %d: literal de texto nao fechado.\n", yylineno - 1);
+                            fprintf(stderr, "Erro lexico na linha %d, coluna %d: literal de texto nao fechado.\n",
+                                    text_start_line, text_start_col);
                             lexical_errors++;
+                            yycolumn = 1;
                             lex_ctx = LEX_CTX_EXPR_START;
                             BEGIN(INITIAL);
                         }
 <TEXT_LIT><<EOF>>       {
                             text_buf_reset();
-                            fprintf(stderr, "Erro lexico na linha %d: literal de texto nao fechado.\n", yylineno);
+                            fprintf(stderr, "Erro lexico na linha %d, coluna %d: literal de texto nao fechado.\n",
+                                    text_start_line, text_start_col);
                             lexical_errors++;
                             lex_ctx = LEX_CTX_EXPR_START;
                             BEGIN(INITIAL);
@@ -141,6 +235,9 @@ static char *text_buf_take(void) {
 "<-"                    {
                             if (lex_ctx == LEX_CTX_EXPR_START) {
                                 yyless(1);
+                                yycolumn -= 1;
+                                text_start_line = yylineno;
+                                text_start_col = token_column;
                                 text_buf_reset();
                                 BEGIN(TEXT_LIT);
                             } else {
@@ -154,6 +251,9 @@ static char *text_buf_take(void) {
                                 return OP_LE;
                             } else {
                                 yyless(1);
+                                yycolumn -= 1;
+                                text_start_line = yylineno;
+                                text_start_col = token_column;
                                 text_buf_reset();
                                 BEGIN(TEXT_LIT);
                             }
@@ -161,33 +261,43 @@ static char *text_buf_take(void) {
 "<"                     {
                             if (lex_ctx == LEX_CTX_AFTER_VALUE) {
                                 lex_ctx = LEX_CTX_EXPR_START;
-                                return '<';
+                                return OP_MENOR;
                             } else {
+                                text_start_line = yylineno;
+                                text_start_col = token_column;
                                 text_buf_reset();
                                 BEGIN(TEXT_LIT);
                             }
                         }
 
-":"                     { lex_ctx = LEX_CTX_EXPR_START; return ':'; }
-";"                     { lex_ctx = LEX_CTX_EXPR_START; return ';'; }
-","                     { lex_ctx = LEX_CTX_EXPR_START; return ','; }
-"{"                     { lex_ctx = LEX_CTX_EXPR_START; return '{'; }
-"}"                     { lex_ctx = LEX_CTX_EXPR_START; return '}'; }
-"("                     { lex_ctx = LEX_CTX_EXPR_START; return '('; }
-")"                     { lex_ctx = LEX_CTX_AFTER_VALUE; return ')'; }
+":"                     { lex_ctx = LEX_CTX_EXPR_START; return DOIS_PONTOS; }
+";"                     { lex_ctx = LEX_CTX_EXPR_START; return PONTO_VIRGULA; }
+","                     { lex_ctx = LEX_CTX_EXPR_START; return VIRGULA; }
+"{"                     { lex_ctx = LEX_CTX_EXPR_START; return ABRE_CHAVE; }
+"}"                     { lex_ctx = LEX_CTX_EXPR_START; return FECHA_CHAVE; }
+"("                     { lex_ctx = LEX_CTX_EXPR_START; return ABRE_PAREN; }
+")"                     { lex_ctx = LEX_CTX_AFTER_VALUE; return FECHA_PAREN; }
 
-"+"                     { lex_ctx = LEX_CTX_EXPR_START; return '+'; }
-"-"                     { lex_ctx = LEX_CTX_EXPR_START; return '-'; }
-"*"                     { lex_ctx = LEX_CTX_EXPR_START; return '*'; }
-"/"                     { lex_ctx = LEX_CTX_EXPR_START; return '/'; }
+"+"                     { lex_ctx = LEX_CTX_EXPR_START; return OP_MAIS; }
+"-"                     { lex_ctx = LEX_CTX_EXPR_START; return OP_MENOS; }
+"*"                     { lex_ctx = LEX_CTX_EXPR_START; return OP_MULT; }
+"/"                     { lex_ctx = LEX_CTX_EXPR_START; return OP_DIV; }
 
 ">="                    { lex_ctx = LEX_CTX_EXPR_START; return OP_GE; }
 "=="                    { lex_ctx = LEX_CTX_EXPR_START; return OP_EQ; }
 "!="                    { lex_ctx = LEX_CTX_EXPR_START; return OP_NE; }
-">"                     { lex_ctx = LEX_CTX_EXPR_START; return '>'; }
+">"                     { lex_ctx = LEX_CTX_EXPR_START; return OP_MAIOR; }
 
-[0-9]+\.[0-9]+          { lex_ctx = LEX_CTX_AFTER_VALUE; yylval.num_real = atof(yytext); return LIT_REAL; }
-[0-9]+                  { lex_ctx = LEX_CTX_AFTER_VALUE; yylval.num_int = atoi(yytext); return LIT_INT; }
+[0-9]+\.[0-9]+          {
+                            lex_ctx = LEX_CTX_AFTER_VALUE;
+                            yylval.num_real = parse_real_literal(yytext);
+                            return LIT_REAL;
+                        }
+[0-9]+                  {
+                            lex_ctx = LEX_CTX_AFTER_VALUE;
+                            yylval.num_int = parse_int_literal(yytext);
+                            return LIT_INT;
+                        }
 
 [a-zA-Z_][a-zA-Z0-9_]*  {
                             lex_ctx = LEX_CTX_AFTER_VALUE;
@@ -200,7 +310,8 @@ static char *text_buf_take(void) {
                         }
 
 .                       {
-                            fprintf(stderr, "Erro lexico na linha %d: simbolo desconhecido '%s'.\n", yylineno, yytext);
+                            fprintf(stderr, "Erro lexico na linha %d, coluna %d: simbolo desconhecido '%s'.\n",
+                                    yylineno, token_column, yytext);
                             lexical_errors++;
                         }
 

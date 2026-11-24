@@ -1,6 +1,7 @@
 #ifndef AST_H
 #define AST_H
 
+#include <stddef.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include "symtab.h"
@@ -52,7 +53,7 @@ ASTNode *create_str(const char *val);
 ASTNode *create_id(const char *name, DataType type);
 ASTNode *create_bin_op(const char *op, DataType type, ASTNode *left, ASTNode *right);
 ASTNode *create_unary_op(const char *op, DataType type, ASTNode *operand);
-void generate_code(ASTNode *root, FILE *out);
+void format_real_literal(double val, char *buf, size_t buf_size);
 void print_ast(ASTNode *root, FILE *out);
 void free_ast(ASTNode *node);
 

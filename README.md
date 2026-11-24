@@ -1,6 +1,6 @@
 # GLUGLU — Compilador e Tradutor
 
-Implementação do tradutor/compilador da linguagem **GLUGLU**, desenvolvido como projeto prático para a disciplina de **Compiladores**.
+Implementação do compilador/tradutor da linguagem **GLUGLU**, desenvolvido como projeto prático para a disciplina de **Compiladores**.
 
 ---
 
@@ -14,21 +14,22 @@ Implementação do tradutor/compilador da linguagem **GLUGLU**, desenvolvido com
 
 ## 📌 Sobre o Repositório e Modalidade Escolhida
 
-Este projeto implementa um **tradutor (transpilador) completo** para a linguagem didática **GLUGLU**. O compilador processa o código-fonte `.glu`, executa as fases clássicas de compilação (léxica, sintática, semântica e construção de AST) e emite código equivalente em **C estruturado (C99/C11)**, pronto para ser compilado por `gcc` ou `clang`.
+Este projeto implementa um **compilador/transpilador completo** para a linguagem didática **GLUGLU**. O compilador processa o código-fonte `.glu` por meio das fases clássicas de compilação (análise léxica, análise sintática, análise semântica, construção da AST e geração de código), gera código equivalente em **C estruturado (C99/C11)** e aciona `gcc` automaticamente para produzir ou executar o binário nativo.
 
 ### Justificativa da Linguagem de Destino
 
-O C foi escolhido por mapear diretamente os tipos estáticos e as estruturas imperativas da GLUGLU, produzir código nativo compilável com ferramentas amplamente disponíveis (`gcc` e `clang`) e permitir inspecionar o resultado da tradução. A escolha deve constar na proposta inicial e ser aprovada pelo professor; a aprovação é uma etapa acadêmica externa ao repositório.
+O C foi escolhido por mapear diretamente os tipos estáticos e as estruturas imperativas da GLUGLU, produzir código nativo compilável com ferramentas amplamente disponíveis (`gcc` e `clang`) e permitir inspecionar o resultado da tradução (`--emit-c`). A escolha deve constar na proposta inicial e ser aprovada pelo professor; a aprovação é uma etapa acadêmica externa ao repositório.
 
-### Progresso da Implementação
+### Arquitetura e Progresso da Implementação
 
 | Etapa / Componente | Status | Arquivo(s) Principal(is) | Descrição |
 | :--- | :---: | :--- | :--- |
-| **1. Análise Léxica (Scanner)** | ✅ Concluído | `src/lexer.l` | Reconhecimento de tokens, literais, palavras-chave, comentários (`%%` e `%glu`) e desambiguação léxica com Flex. |
-| **2. Análise Sintática (Parser)** | ✅ Concluído | `src/parser.y` | Gramática LALR(1) em Bison com precedência de operadores, controle de fluxo e sub-rotinas. |
-| **3. Tabela de Símbolos e Semântica** | ✅ Concluído | `src/symtab.h`, `src/symtab.c`, `src/parser.y` | Escopos aninhados, declarações, tipos, assinaturas de sub-rotinas, retornos e contexto de laços. |
-| **4. Construção e Impressão da AST** | ✅ Concluído | `src/ast.h`, `src/ast.c` | Construção da Árvore Sintática Abstrata tipada em memória e visualização hierárquica via flag `--ast`. |
-| **5. Geração de Código Alvo (C)** | ✅ Concluído | `src/ast.c` | Travessia da AST emitindo código C estruturado com funções no escopo global e bloco principal em `main()`. |
+| **1. Análise Léxica (Scanner)** | ✅ Concluído | `src/lexer.l`, `src/lexer.h` | Tokens nomeados (incluindo `DOIS_PONTOS` e operadores), literais com checagem de faixa, rastreamento de linha/coluna, comentários (`%%` e `%glu`), desambiguação léxica e modo `--tokens`. |
+| **2. Análise Sintática (Parser)** | ✅ Concluído | `src/parser.y` | Gramática LALR(1) enxuta em Bison com precedência de operadores, controle de fluxo e sub-rotinas. |
+| **3. Tabela de Símbolos e Semântica** | ✅ Concluído | `src/symtab.h`, `src/symtab.c`, `src/semantic.h`, `src/semantic.c` | Escopos aninhados, declarações, checagem/inferência de tipos, assinaturas de sub-rotinas, retornos e contexto de laços. |
+| **4. Construção e Impressão da AST** | ✅ Concluído | `src/ast.h`, `src/ast.c` | Construção da Árvore Sintática Abstrata tipada em memória e visualização hierárquica via `--ast`. |
+| **5. Geração de Código Alvo (C)** | ✅ Concluído | `src/codegen.h`, `src/codegen.c` | Travessia da AST emitindo código C99 estruturado com globais/funções no escopo de arquivo e bloco principal em `main()`. |
+| **6. Driver / CLI** | ✅ Concluído | `src/main.c` | Interface de linha de comando para compilar direto para executável (`-o`), rodar (`--run`), emitir C (`--emit-c`), inspecionar AST (`--ast`) e tokens (`--tokens`). |
 
 ---
 
@@ -199,7 +200,7 @@ expressao         ::= expressao ( "+" | "-" | "*" | "/" ) expressao
 ### Principais Decisões de Sintaxe e Semântica
 
 1. **Desambiguação Léxica entre `<texto>` e Operadores `<`, `<=`, `<-`:**
-   Como literais de texto são delimitados por `<` e `>`, o analisador léxico mantém um estado contextual (`LEX_CTX_EXPR_START`, `LEX_CTX_AFTER_TYPE` e `LEX_CTX_AFTER_VALUE`) combinado a uma *start condition* exclusiva (`TEXT_LIT`). Assim, `<-`, `<=` e `<` são reconhecidos corretamente mesmo quando aparecem na mesma linha que `>` ou outros literais de texto, literais iniciados por `-` ou `=` (como `<-seta>` e `<=menor>`) são aceitos e literais de texto sem fechamento reportam erro léxico.
+   Como literais de texto são delimitados por `<` e `>`, o analisador léxico mantém um estado contextual (`LEX_CTX_EXPR_START`, `LEX_CTX_AFTER_TYPE` e `LEX_CTX_AFTER_VALUE`) combinado a uma *start condition* exclusiva (`TEXT_LIT`). Todos os símbolos possuem tokens nomeados (`DOIS_PONTOS`, `PONTO_VIRGULA`, `OP_MAIS`, `OP_MENOR`, etc.), literais numéricos validam overflow (`strtol`/`strtod`) e os erros léxicos/sintáticos informam linha e coluna.
 2. **Inicialização Obrigatória (`glu: id : tipo <- expr;`):**
    Impede o uso de variáveis com lixo de memória, garantindo que toda entrada na Tabela de Símbolos já nasça inicializada. Em caso de *shadowing* com autorreferência (ex.: `glu: x : inteiro <- x + 1;`), o gerador de C usa uma variável temporária para preservar a semântica sem *Undefined Behavior*.
 3. **Escopos Aninhados com Tabela Hash (`djb2`):**
@@ -228,12 +229,14 @@ expressao         ::= expressao ( "+" | "-" | "*" | "/" ) expressao
 ├── Makefile                       # Regras de compilação e execução de testes
 ├── README.md                      # Documentação da linguagem e do compilador
 ├── src/
-│   ├── ast.h                      # Definições da Árvore Sintática Abstrata (AST)
-│   ├── ast.c                      # Construtores de nós, impressão da AST e geração de código C
-│   ├── symtab.h                   # Estruturas da Tabela de Símbolos e escopos
-│   ├── symtab.c                   # Lógica da Tabela de Símbolos e validações de tipo
-│   ├── lexer.l                    # Especificação léxica (Flex)
-│   └── parser.y                   # Gramática formal e ações sintático-semânticas (Bison)
+│   ├── lexer.l                    # Especificação léxica (Flex) com tokens nomeados
+│   ├── lexer.h                    # Interface do analisador léxico
+│   ├── parser.y                   # Gramática formal (Bison)
+│   ├── semantic.h / semantic.c    # Análise semântica (escopos, tipos, retornos, laços)
+│   ├── symtab.h / symtab.c        # Tabela de símbolos com escopos aninhados
+│   ├── ast.h / ast.c              # Árvore Sintática Abstrata (AST) e impressão
+│   ├── codegen.h / codegen.c      # Geração de código C99
+│   └── main.c                     # CLI e orquestração das fases
 ├── exemplos/
 │   ├── media.glu                  # Programa 1: cálculo aritmético e saída
 │   ├── idade.glu                  # Programa 2: entrada e decisão condicional
@@ -243,12 +246,13 @@ expressao         ::= expressao ( "+" | "-" | "*" | "/" ) expressao
 └── tests/
     ├── run_tests.sh               # Suíte automatizada de testes (make test)
     ├── valid/
-    │   ├── entrada_texto.glu           # Leitura dinâmica de linha e igualdade por conteúdo
+    │   ├── entrada_texto.glu            # Leitura dinâmica de linha e igualdade por conteúdo
     │   ├── escopo_global_e_recursao.glu # Variáveis globais em sub-rotinas e recursão tipada
-    │   ├── operadores_logicos.glu      # Operadores and, or e not em minúsculas
-    │   └── operadores_relacionais.glu  # Desambiguação de <-, <=, <>, precisão real e shadowing
+    │   ├── operadores_logicos.glu       # Operadores and, or e not em minúsculas
+    │   └── operadores_relacionais.glu   # Desambiguação de <-, <=, <>, precisão real e shadowing
     └── invalid/
         ├── erro_lexico.glu
+        ├── erro_inteiro_overflow.glu
         ├── erro_comentario_nao_fechado.glu
         ├── erro_texto_nao_fechado.glu
         ├── erro_sintatico.glu
@@ -293,38 +297,43 @@ No Ubuntu/Debian:
 sudo apt update && sudo apt install build-essential flex bison
 ```
 
-### 1. Compilar o Tradutor
+### 1. Compilar o Compilador
 
 ```bash
 make
 ```
 
-### 2. Visualizar a AST de um Programa GLUGLU
-
-Use a flag `--ast` (ou `-a`) para inspecionar a Árvore Sintática Abstrata anotada com os tipos semânticos (via redirecionamento ou passando o caminho do arquivo):
+### 2. Compilar e Executar Programas GLUGLU
 
 ```bash
-./glugluc --ast exemplos/media.glu
-# ou
-./glugluc --ast < exemplos/media.glu
+# Compila e executa diretamente em um único comando
+./glugluc --run exemplos/media.glu
+
+# Compila para um executável nativo (estilo gcc)
+./glugluc exemplos/media.glu -o media
+./media
+
+# Se omitir -o, gera o executável com o nome do arquivo (ex.: ./media)
+./glugluc exemplos/media.glu
+./media
 ```
 
-### 3. Traduzir para C e Executar (Casos Válidos)
+### 3. Inspecionar cada Fase da Compilação
 
 ```bash
-# 1. Traduz GLUGLU para C
-./glugluc exemplos/media.glu > saida.c
+# Fase léxica: imprime todos os tokens (linha:coluna, nome e valor)
+./glugluc --tokens exemplos/media.glu
 
-# 2. Compila o código C gerado
-gcc -std=c99 saida.c -o programa_gluglu
+# Árvore Sintática Abstrata (AST) anotada com tipos
+./glugluc --ast exemplos/media.glu
 
-# 3. Executa o binário final
-./programa_gluglu
+# Emitir apenas o código C gerado (em arquivo com -o ou no terminal)
+./glugluc --emit-c exemplos/media.glu -o saida.c
 ```
 
 ### 4. Executar a Suíte Automatizada de Testes
 
-O alvo `make test` executa `tests/run_tests.sh`, validando a CLI, todos os programas em `exemplos/` e `tests/valid/` (AST, transpilação, compilação C99 com `-Wall -Wextra -Werror` e execução) e todos os casos de erro em `tests/invalid/`:
+O alvo `make test` executa `tests/run_tests.sh`, validando a CLI, todos os programas em `exemplos/` e `tests/valid/` (`--tokens`, `--ast`, `--emit-c` com `gcc -std=c99 -Wall -Wextra -Werror`, compilação direta com `-o` e execução com `--run`) e todos os casos de erro em `tests/invalid/`:
 
 ```bash
 make test
@@ -374,7 +383,7 @@ GORGOREJA(media);
     [ID] media (double)
 ```
 
-**Trecho principal do C emitido** (o tradutor também inclui funções auxiliares de entrada):
+**Trecho principal do C emitido (`./glugluc --emit-c exemplos/media.glu`):**
 ```c
 int main(void) {
     double gluglu_user_nota1 = 8.5;
@@ -386,7 +395,7 @@ int main(void) {
 }
 ```
 
-**Saída da Execução:**
+**Execução (`./glugluc --run exemplos/media.glu`):**
 ```text
 Media Ponderada: 
 7.600000
@@ -410,7 +419,7 @@ alimentar_ave(<Pavoa>, 3);
 alimentar_ave(<Galo>, 2);
 ```
 
-**Trecho principal do C emitido** (os nomes GLUGLU recebem o prefixo `gluglu_user_` no C):
+**Trecho principal do C emitido (`./glugluc --emit-c exemplos/alimentacao.glu`):**
 ```c
 void gluglu_user_alimentar_ave(char* gluglu_user_ave, int gluglu_user_kg) {
     printf("%s\n", "Alimentando ");

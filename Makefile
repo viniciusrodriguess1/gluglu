@@ -2,6 +2,8 @@ CC = gcc
 CFLAGS = -Wall -Wextra -Isrc
 SRC_DIR = src
 BUILD_DIR = build
+HEADERS = $(SRC_DIR)/ast.h $(SRC_DIR)/codegen.h $(SRC_DIR)/lexer.h $(SRC_DIR)/semantic.h $(SRC_DIR)/symtab.h
+SRCS = $(BUILD_DIR)/parser.tab.c $(BUILD_DIR)/lex.yy.c $(SRC_DIR)/main.c $(SRC_DIR)/semantic.c $(SRC_DIR)/ast.c $(SRC_DIR)/codegen.c $(SRC_DIR)/symtab.c
 
 all: glugluc
 
@@ -16,8 +18,8 @@ $(BUILD_DIR)/parser.tab.c $(BUILD_DIR)/parser.tab.h: $(SRC_DIR)/parser.y | $(BUI
 $(BUILD_DIR)/lex.yy.c: $(SRC_DIR)/lexer.l $(BUILD_DIR)/parser.tab.h | $(BUILD_DIR)
 	flex -o $(BUILD_DIR)/lex.yy.c $(SRC_DIR)/lexer.l
 
-glugluc: $(BUILD_DIR)/parser.tab.c $(BUILD_DIR)/lex.yy.c $(SRC_DIR)/ast.c $(SRC_DIR)/symtab.c
-	$(CC) $(CFLAGS) -I$(BUILD_DIR) $^ -o $@
+glugluc: $(SRCS) $(HEADERS)
+	$(CC) $(CFLAGS) -I$(BUILD_DIR) $(SRCS) -o $@
 
 test: glugluc
 	sh tests/run_tests.sh
