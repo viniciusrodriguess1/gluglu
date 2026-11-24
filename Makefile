@@ -5,7 +5,7 @@ BUILD_DIR = build
 
 all: glugluc
 
-.PHONY: all clean
+.PHONY: all test clean
 
 $(BUILD_DIR):
 	mkdir -p $(BUILD_DIR)
@@ -18,6 +18,9 @@ $(BUILD_DIR)/lex.yy.c: $(SRC_DIR)/lexer.l $(BUILD_DIR)/parser.tab.h | $(BUILD_DI
 
 glugluc: $(BUILD_DIR)/parser.tab.c $(BUILD_DIR)/lex.yy.c $(SRC_DIR)/ast.c $(SRC_DIR)/symtab.c
 	$(CC) $(CFLAGS) -I$(BUILD_DIR) $^ -o $@
+
+test: glugluc
+	sh tests/run_tests.sh
 
 clean:
 	rm -rf $(BUILD_DIR) glugluc

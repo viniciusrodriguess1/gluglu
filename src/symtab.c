@@ -4,13 +4,22 @@
 
 #define HASH_SIZE 64
 
+char *gluglu_strdup(const char *str) {
+    if (!str) return NULL;
+    size_t len = strlen(str) + 1;
+    char *copy = (char *)malloc(len);
+    if (!copy) return NULL;
+    memcpy(copy, str, len);
+    return copy;
+}
+
 static unsigned int hash(const char *str, int size) {
     unsigned int h = 5381;
-    int c;
-    while ((c = *str++)) {
+    unsigned char c;
+    while ((c = (unsigned char)*str++)) {
         h = ((h << 5) + h) + c; // h * 33 + c (djb2)
     }
-    return h % size;
+    return h % (unsigned int)size;
 }
 
 static Scope *scope_create(int level, Scope *parent) {
@@ -19,6 +28,10 @@ static Scope *scope_create(int level, Scope *parent) {
     scope->level = level;
     scope->size = HASH_SIZE;
     scope->buckets = (Symbol **)calloc(HASH_SIZE, sizeof(Symbol *));
+    if (!scope->buckets) {
+        free(scope);
+        return NULL;
+    }
     scope->parent = parent;
     return scope;
 }
@@ -44,6 +57,10 @@ SymbolTable *symtab_create(void) {
     if (!st) return NULL;
     st->current_level = 0;
     st->current_scope = scope_create(0, NULL);
+    if (!st->current_scope) {
+        free(st);
+        return NULL;
+    }
     return st;
 }
 
@@ -57,8 +74,9 @@ void symtab_destroy(SymbolTable *st) {
 
 void symtab_enter_scope(SymbolTable *st) {
     if (!st) return;
+    Scope *new_scope = scope_create(st->current_level + 1, st->current_scope);
+    if (!new_scope) return;
     st->current_level++;
-    Scope *new_scope = scope_create(st->current_level, st->current_scope);
     st->current_scope = new_scope;
 }
 
@@ -111,7 +129,11 @@ bool symtab_insert(SymbolTable *st, const char *name, DataType type, SymbolKind 
 
     Symbol *sym = (Symbol *)malloc(sizeof(Symbol));
     if (!sym) return false;
-    sym->name = strdup(name);
+    sym->name = gluglu_strdup(name);
+    if (!sym->name) {
+        free(sym);
+        return false;
+    }
     sym->type = type;
     sym->kind = kind;
     sym->param_types = NULL;

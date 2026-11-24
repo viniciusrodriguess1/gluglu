@@ -6,7 +6,9 @@
 #include "ast.h"
 
 extern int yylineno;
+extern FILE *yyin;
 int yylex(void);
+int yylex_destroy(void);
 void yyerror(const char *s);
 
 SymbolTable *st = NULL;
@@ -126,6 +128,15 @@ static DataType infer_arith_type(const char *op, DataType left, DataType right) 
     return TYPE_UNKNOWN;
 }
 
+static DataType infer_unary_minus_type(DataType operand) {
+    if (operand == TYPE_UNKNOWN) return TYPE_UNKNOWN;
+    if (operand == TYPE_INTEIRO || operand == TYPE_REAL) return operand;
+    fprintf(stderr, "Erro semantico na linha %d: operador unario '-' requer operando numerico (recebido '%s').\n",
+            yylineno, datatype_to_str(operand));
+    semantic_errors++;
+    return TYPE_UNKNOWN;
+}
+
 static DataType check_rel_type(const char *op, DataType left, DataType right) {
     if (left == TYPE_UNKNOWN || right == TYPE_UNKNOWN) return TYPE_BOOLEANO;
     bool both_num = (left == TYPE_INTEIRO || left == TYPE_REAL) &&
@@ -165,19 +176,21 @@ static void collect_return_types(ASTNode *body, DataType *return_type, size_t *r
     while (curr) {
         if (curr->type == NODE_RETURN && curr->left) {
             DataType current = curr->left->data_type;
-            if (*return_count == 0) {
-                *return_type = current;
-            } else if (*return_type != current) {
-                bool both_numeric = (*return_type == TYPE_INTEIRO || *return_type == TYPE_REAL) &&
-                                    (current == TYPE_INTEIRO || current == TYPE_REAL);
-                if (both_numeric) {
-                    *return_type = TYPE_REAL;
-                } else {
-                    fprintf(stderr, "Erro semantico na linha %d: tipos de retorno incompativeis em CHOCA.\n", yylineno);
-                    semantic_errors++;
+            (*return_count)++;
+            if (current != TYPE_UNKNOWN) {
+                if (*return_type == TYPE_UNKNOWN) {
+                    *return_type = current;
+                } else if (*return_type != current) {
+                    bool both_numeric = (*return_type == TYPE_INTEIRO || *return_type == TYPE_REAL) &&
+                                        (current == TYPE_INTEIRO || current == TYPE_REAL);
+                    if (both_numeric) {
+                        *return_type = TYPE_REAL;
+                    } else {
+                        fprintf(stderr, "Erro semantico na linha %d: tipos de retorno incompativeis em CHOCA.\n", yylineno);
+                        semantic_errors++;
+                    }
                 }
             }
-            (*return_count)++;
         } else if (curr->type == NODE_IF) {
             collect_return_types(curr->right, return_type, return_count);
             collect_return_types(curr->extra, return_type, return_count);
@@ -227,13 +240,27 @@ static bool contains_return_statement(ASTNode *statements) {
 
 static void update_function_call_types(ASTNode *node, const char *name, DataType type) {
     for (ASTNode *curr = node; curr; curr = curr->next) {
-        if (curr->type == NODE_FUNC_CALL && strcmp(curr->name, name) == 0) {
-            curr->data_type = type;
-        }
         update_function_call_types(curr->left, name, type);
         update_function_call_types(curr->right, name, type);
         update_function_call_types(curr->extra, name, type);
         update_function_call_types(curr->init, name, type);
+
+        if (curr->type == NODE_FUNC_CALL && strcmp(curr->name, name) == 0) {
+            curr->data_type = type;
+        } else if (curr->type == NODE_BIN_OP && curr->data_type == TYPE_UNKNOWN &&
+                   curr->left && curr->right) {
+            DataType lt = curr->left->data_type;
+            DataType rt = curr->right->data_type;
+            if ((lt == TYPE_INTEIRO || lt == TYPE_REAL) &&
+                (rt == TYPE_INTEIRO || rt == TYPE_REAL)) {
+                curr->data_type = (lt == TYPE_REAL || rt == TYPE_REAL) ? TYPE_REAL : TYPE_INTEIRO;
+            }
+        } else if (curr->type == NODE_UNARY_OP && curr->data_type == TYPE_UNKNOWN &&
+                   strcmp(curr->op, "-") == 0 && curr->left) {
+            curr->data_type = curr->left->data_type;
+        } else if (curr->type == NODE_RETURN && curr->data_type == TYPE_UNKNOWN && curr->left) {
+            curr->data_type = curr->left->data_type;
+        }
     }
 }
 
@@ -249,6 +276,9 @@ static DataType infer_return_type(ASTNode *body, const char *name) {
         }
     } else if (!statement_list_returns(body)) {
         fprintf(stderr, "Erro semantico na linha %d: nem todos os caminhos de CHOCA '%s' retornam um valor.\n", yylineno, name);
+        semantic_errors++;
+    } else if (return_type == TYPE_UNKNOWN && semantic_errors == 0) {
+        fprintf(stderr, "Erro semantico na linha %d: nao foi possivel inferir o tipo de retorno de CHOCA '%s'.\n", yylineno, name);
         semantic_errors++;
     }
 
@@ -272,6 +302,8 @@ static DataType infer_return_type(ASTNode *body, const char *name) {
 %token <num_int> LIT_INT LIT_BOOL
 %token <num_real> LIT_REAL
 %token <str> LIT_TEXTO
+
+%destructor { free($$); } ID LIT_TEXTO
 
 /* Palavras-chave e operadores */
 %token GLU ATRIB GORGOREJA CISCA IFGLU ELSEGLU WHILEGLU FORGLU STOPGLU PULAGLU
@@ -391,10 +423,11 @@ decl_var:
         }
 
         ASTNode *n = create_node(NODE_VAR_DECL);
-        n->name = strdup(datatype_to_str($5));
+        n->name = gluglu_strdup(datatype_to_str($5));
         n->data_type = $5;
         n->left = create_id($3, $5);
         n->right = $7;
+        free($3);
         $$ = n;
     }
     ;
@@ -422,6 +455,7 @@ atribuicao:
         n->data_type = var_type;
         n->left = create_id($1, var_type);
         n->right = $3;
+        free($1);
         $$ = n;
     }
     ;
@@ -449,6 +483,7 @@ comando_entrada:
         }
         ASTNode *n = create_node(NODE_READ);
         n->left = create_id($3, var_type);
+        free($3);
         $$ = n;
     }
     ;
@@ -502,7 +537,11 @@ comando_for:
 decl_proc:
     NINHO ID {
         Symbol *symbol = NULL;
-        if (!symtab_insert(st, $2, TYPE_VOID, SYM_PROCEDURE)) {
+        if (st->current_level > 0) {
+            fprintf(stderr, "Erro semantico na linha %d: procedimento '%s' deve ser declarado no escopo global.\n",
+                    yylineno, $2);
+            semantic_errors++;
+        } else if (!symtab_insert(st, $2, TYPE_VOID, SYM_PROCEDURE)) {
             fprintf(stderr, "Erro semantico na linha %d: procedimento '%s' ja declarado neste escopo.\n",
                     yylineno, $2);
             semantic_errors++;
@@ -517,10 +556,11 @@ decl_proc:
         symtab_exit_scope(st);
         leave_function_context();
         ASTNode *n = create_node(NODE_FUNC_DECL);
-        n->name = strdup($2);
+        n->name = gluglu_strdup($2);
         n->data_type = TYPE_VOID;
         n->extra = $5;
         n->right = $9;
+        free($2);
         $$ = n;
     }
     ;
@@ -528,7 +568,11 @@ decl_proc:
 decl_func:
     CHOCA ID {
         Symbol *symbol = NULL;
-        if (!symtab_insert(st, $2, TYPE_INTEIRO, SYM_FUNCTION)) {
+        if (st->current_level > 0) {
+            fprintf(stderr, "Erro semantico na linha %d: funcao '%s' deve ser declarada no escopo global.\n",
+                    yylineno, $2);
+            semantic_errors++;
+        } else if (!symtab_insert(st, $2, TYPE_UNKNOWN, SYM_FUNCTION)) {
             fprintf(stderr, "Erro semantico na linha %d: funcao '%s' ja declarada neste escopo.\n",
                     yylineno, $2);
             semantic_errors++;
@@ -547,10 +591,11 @@ decl_func:
         }
         leave_function_context();
         ASTNode *n = create_node(NODE_FUNC_DECL);
-        n->name = strdup($2);
+        n->name = gluglu_strdup($2);
         n->data_type = ret_type;
         n->extra = $5;
         n->right = $9;
+        free($2);
         $$ = n;
     }
     ;
@@ -577,8 +622,9 @@ param:
             semantic_errors++;
         }
         ASTNode *n = create_node(NODE_PARAM);
-        n->name = strdup($2);
+        n->name = gluglu_strdup($2);
         n->data_type = $1;
+        free($2);
         $$ = n;
     }
     ;
@@ -599,9 +645,10 @@ chamada_func:
             check_call_arguments(sym, $1, $3);
         }
         ASTNode *n = create_node(NODE_FUNC_CALL);
-        n->name = strdup($1);
+        n->name = gluglu_strdup($1);
         n->data_type = ret_type;
         n->left = $3;
+        free($1);
         $$ = n;
     }
     ;
@@ -635,12 +682,12 @@ expressao:
     | expressao OP_AND expressao { $$ = create_bin_op("&&", check_logic_type("and", $1->data_type, $3->data_type), $1, $3); }
     | expressao OP_OR expressao  { $$ = create_bin_op("||", check_logic_type("or", $1->data_type, $3->data_type), $1, $3); }
     | OP_NOT expressao           { $$ = create_unary_op("!", check_logic_type("not", $2->data_type, TYPE_BOOLEANO), $2); }
-    | '-' expressao %prec UMINUS { $$ = create_unary_op("-", infer_arith_type("-", $2->data_type, $2->data_type), $2); }
+    | '-' expressao %prec UMINUS { $$ = create_unary_op("-", infer_unary_minus_type($2->data_type), $2); }
     | '(' expressao ')'        { $$ = $2; }
     | LIT_INT                  { $$ = create_num_int($1); }
     | LIT_REAL                 { $$ = create_num_real($1); }
     | LIT_BOOL                 { $$ = create_bool($1); }
-    | LIT_TEXTO                { $$ = create_str($1); }
+    | LIT_TEXTO                { $$ = create_str($1); free($1); }
     | chamada_func             {
         if ($1->data_type == TYPE_VOID) {
             fprintf(stderr, "Erro semantico na linha %d: procedimento nao pode ser usado como expressao.\n", yylineno);
@@ -661,6 +708,7 @@ expressao:
             var_type = sym->type;
         }
         $$ = create_id($1, var_type);
+        free($1);
     }
     ;
 
@@ -670,16 +718,51 @@ void yyerror(const char *s) {
     fprintf(stderr, "Erro sintatico proximo a linha %d: %s\n", yylineno, s);
 }
 
+static void print_usage(FILE *out, const char *prog) {
+    fprintf(out, "Uso: %s [--ast|-a] [arquivo.glu]\n", prog);
+}
+
 int main(int argc, char **argv) {
     int dump_ast = 0;
+    const char *input_path = NULL;
+
     for (int i = 1; i < argc; i++) {
         if (strcmp(argv[i], "--ast") == 0 || strcmp(argv[i], "-a") == 0) {
             dump_ast = 1;
+        } else if (strcmp(argv[i], "--help") == 0 || strcmp(argv[i], "-h") == 0) {
+            print_usage(stdout, argv[0]);
+            return 0;
+        } else if (argv[i][0] == '-') {
+            fprintf(stderr, "Erro: opcao desconhecida '%s'.\n", argv[i]);
+            print_usage(stderr, argv[0]);
+            return 1;
+        } else if (!input_path) {
+            input_path = argv[i];
+        } else {
+            fprintf(stderr, "Erro: argumento inesperado '%s'.\n", argv[i]);
+            print_usage(stderr, argv[0]);
+            return 1;
         }
     }
 
-    st = symtab_create();
+    FILE *input_file = NULL;
+    if (input_path) {
+        input_file = fopen(input_path, "r");
+        if (!input_file) {
+            perror(input_path);
+            return 1;
+        }
+        yyin = input_file;
+    }
 
+    st = symtab_create();
+    if (!st) {
+        fputs("Erro interno: memoria insuficiente ao inicializar a tabela de simbolos.\n", stderr);
+        if (input_file) fclose(input_file);
+        return 1;
+    }
+
+    int status = 0;
     if (yyparse() == 0 && lexical_errors == 0 && semantic_errors == 0) {
         if (dump_ast) {
             print_ast(root, stdout);
@@ -688,12 +771,15 @@ int main(int argc, char **argv) {
         }
     } else {
         fprintf(stderr, "\nCompilacao abortada: foram encontrados erros no programa.\n");
-        free_ast(root);
-        symtab_destroy(st);
-        return 1;
+        status = 1;
     }
 
+    while (function_context) {
+        leave_function_context();
+    }
     free_ast(root);
     symtab_destroy(st);
-    return 0;
+    yylex_destroy();
+    if (input_file) fclose(input_file);
+    return status;
 }

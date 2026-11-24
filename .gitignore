@@ -1,0 +1,9 @@
+build/
+glugluc
+glugluc.exe
+saida.c
+programa_gluglu
+programa_gluglu.exe
+*.o
+*.out
+.DS_Store

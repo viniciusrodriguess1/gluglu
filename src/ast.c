@@ -1,8 +1,20 @@
 #include "ast.h"
 #include <string.h>
 
+static void oom_abort(void) {
+    fputs("Erro interno: memoria insuficiente.\n", stderr);
+    exit(EXIT_FAILURE);
+}
+
+static char *dup_or_abort(const char *val) {
+    char *copy = gluglu_strdup(val);
+    if (!copy) oom_abort();
+    return copy;
+}
+
 ASTNode *create_node(NodeType type) {
     ASTNode *node = (ASTNode *)calloc(1, sizeof(ASTNode));
+    if (!node) oom_abort();
     node->type = type;
     node->data_type = TYPE_UNKNOWN;
     return node;
@@ -31,14 +43,14 @@ ASTNode *create_bool(int val) {
 
 ASTNode *create_str(const char *val) {
     ASTNode *n = create_node(NODE_STRING);
-    n->name = strdup(val);
+    n->name = dup_or_abort(val);
     n->data_type = TYPE_TEXTO;
     return n;
 }
 
 ASTNode *create_id(const char *name, DataType type) {
     ASTNode *n = create_node(NODE_ID);
-    n->name = strdup(name);
+    n->name = dup_or_abort(name);
     n->data_type = type;
     return n;
 }
@@ -72,6 +84,15 @@ static void emit_identifier(FILE *out, const char *name) {
     fprintf(out, "gluglu_user_%s", name);
 }
 
+static void emit_real_literal(FILE *out, double val) {
+    char buf[64];
+    snprintf(buf, sizeof(buf), "%.17g", val);
+    fputs(buf, out);
+    if (!strchr(buf, '.') && !strchr(buf, 'e') && !strchr(buf, 'E')) {
+        fputs(".0", out);
+    }
+}
+
 static void emit_c_string(FILE *out, const char *value) {
     fputc('"', out);
     for (const unsigned char *ch = (const unsigned char *)value; *ch; ch++) {
@@ -87,11 +108,27 @@ static void emit_c_string(FILE *out, const char *value) {
     fputc('"', out);
 }
 
+static bool expr_references_id(ASTNode *node, const char *name) {
+    while (node) {
+        if (node->type == NODE_ID && node->name && strcmp(node->name, name) == 0) {
+            return true;
+        }
+        if (expr_references_id(node->left, name) ||
+            expr_references_id(node->right, name) ||
+            expr_references_id(node->extra, name) ||
+            expr_references_id(node->init, name)) {
+            return true;
+        }
+        node = node->next;
+    }
+    return false;
+}
+
 static void emit_expr(ASTNode *node, FILE *out) {
     if (!node) return;
     switch (node->type) {
         case NODE_NUM_INT:  fprintf(out, "%d", node->int_val); break;
-        case NODE_NUM_REAL: fprintf(out, "%f", node->real_val); break;
+        case NODE_NUM_REAL: emit_real_literal(out, node->real_val); break;
         case NODE_BOOL:     fprintf(out, "%s", node->int_val ? "true" : "false"); break;
         case NODE_STRING:   emit_c_string(out, node->name); break;
         case NODE_ID:       emit_identifier(out, node->name); break;
@@ -147,16 +184,40 @@ static void emit_stmt_inline(ASTNode *node, FILE *out) {
     }
 }
 
-static void emit_stmt_list(ASTNode *curr, FILE *out, int indent) {
+static void emit_stmt_list(ASTNode *curr, FILE *out, int indent,
+                           ASTNode *hoist_until, int *temp_counter) {
+    bool hoisting = (hoist_until != NULL);
     while (curr) {
+        if (hoisting && curr == hoist_until) {
+            hoisting = false;
+        }
+
         switch (curr->type) {
             case NODE_VAR_DECL:
-                emit_indent(out, indent);
-                fprintf(out, "%s ", curr->name);
-                emit_identifier(out, curr->left->name);
-                fprintf(out, " = ");
-                emit_expr(curr->right, out);
-                fprintf(out, ";\n");
+                if (hoisting) {
+                    emit_indent(out, indent);
+                    emit_identifier(out, curr->left->name);
+                    fprintf(out, " = ");
+                    emit_expr(curr->right, out);
+                    fprintf(out, ";\n");
+                } else if (expr_references_id(curr->right, curr->left->name)) {
+                    int tmp = (*temp_counter)++;
+                    emit_indent(out, indent);
+                    fprintf(out, "%s gluglu_init_%d = ", curr->name, tmp);
+                    emit_expr(curr->right, out);
+                    fprintf(out, ";\n");
+                    emit_indent(out, indent);
+                    fprintf(out, "%s ", curr->name);
+                    emit_identifier(out, curr->left->name);
+                    fprintf(out, " = gluglu_init_%d;\n", tmp);
+                } else {
+                    emit_indent(out, indent);
+                    fprintf(out, "%s ", curr->name);
+                    emit_identifier(out, curr->left->name);
+                    fprintf(out, " = ");
+                    emit_expr(curr->right, out);
+                    fprintf(out, ";\n");
+                }
                 break;
 
             case NODE_ASSIGN:
@@ -214,11 +275,11 @@ static void emit_stmt_list(ASTNode *curr, FILE *out, int indent) {
                 fprintf(out, "if (");
                 emit_expr(curr->left, out);
                 fprintf(out, ") {\n");
-                emit_stmt_list(curr->right, out, indent + 1);
+                emit_stmt_list(curr->right, out, indent + 1, NULL, temp_counter);
                 emit_indent(out, indent);
                 if (curr->extra) {
                     fprintf(out, "} else {\n");
-                    emit_stmt_list(curr->extra, out, indent + 1);
+                    emit_stmt_list(curr->extra, out, indent + 1, NULL, temp_counter);
                     emit_indent(out, indent);
                 }
                 fprintf(out, "}\n");
@@ -229,24 +290,50 @@ static void emit_stmt_list(ASTNode *curr, FILE *out, int indent) {
                 fprintf(out, "while (");
                 emit_expr(curr->left, out);
                 fprintf(out, ") {\n");
-                emit_stmt_list(curr->right, out, indent + 1);
+                emit_stmt_list(curr->right, out, indent + 1, NULL, temp_counter);
                 emit_indent(out, indent);
                 fprintf(out, "}\n");
                 break;
 
-            case NODE_FOR:
-                emit_indent(out, indent);
+            case NODE_FOR: {
+                bool self_ref_init = (curr->init &&
+                                      curr->init->type == NODE_VAR_DECL &&
+                                      expr_references_id(curr->init->right, curr->init->left->name));
+                int body_indent = indent;
+                int tmp = -1;
+                if (self_ref_init) {
+                    tmp = (*temp_counter)++;
+                    emit_indent(out, indent);
+                    fprintf(out, "{\n");
+                    body_indent = indent + 1;
+                    emit_indent(out, body_indent);
+                    fprintf(out, "%s gluglu_init_%d = ", curr->init->name, tmp);
+                    emit_expr(curr->init->right, out);
+                    fprintf(out, ";\n");
+                }
+                emit_indent(out, body_indent);
                 fprintf(out, "for (");
-                emit_stmt_inline(curr->init, out);
+                if (self_ref_init) {
+                    fprintf(out, "%s ", curr->init->name);
+                    emit_identifier(out, curr->init->left->name);
+                    fprintf(out, " = gluglu_init_%d", tmp);
+                } else {
+                    emit_stmt_inline(curr->init, out);
+                }
                 fprintf(out, "; ");
                 emit_expr(curr->left, out);
                 fprintf(out, "; ");
                 emit_stmt_inline(curr->extra, out);
                 fprintf(out, ") {\n");
-                emit_stmt_list(curr->right, out, indent + 1);
-                emit_indent(out, indent);
+                emit_stmt_list(curr->right, out, body_indent + 1, NULL, temp_counter);
+                emit_indent(out, body_indent);
                 fprintf(out, "}\n");
+                if (self_ref_init) {
+                    emit_indent(out, indent);
+                    fprintf(out, "}\n");
+                }
                 break;
+            }
 
             case NODE_BREAK:
                 emit_indent(out, indent);
@@ -278,7 +365,7 @@ static void emit_stmt_list(ASTNode *curr, FILE *out, int indent) {
             case NODE_BLOCK:
                 emit_indent(out, indent);
                 fprintf(out, "{\n");
-                emit_stmt_list(curr->left, out, indent + 1);
+                emit_stmt_list(curr->left, out, indent + 1, NULL, temp_counter);
                 emit_indent(out, indent);
                 fprintf(out, "}\n");
                 break;
@@ -297,6 +384,8 @@ static void emit_stmt_list(ASTNode *curr, FILE *out, int indent) {
 void generate_code(ASTNode *root, FILE *out) {
     if (!root) return;
 
+    int temp_counter = 0;
+
     fprintf(out,
             "#include <ctype.h>\n"
             "#include <errno.h>\n"
@@ -306,6 +395,22 @@ void generate_code(ASTNode *root, FILE *out) {
             "#include <stdio.h>\n"
             "#include <stdlib.h>\n"
             "#include <string.h>\n\n"
+            "typedef struct GlugluTextNode {\n"
+            "    char *data;\n"
+            "    struct GlugluTextNode *next;\n"
+            "} GlugluTextNode;\n\n"
+            "static GlugluTextNode *gluglu_text_allocs = NULL;\n"
+            "static bool gluglu_cleanup_registered = false;\n\n"
+            "static inline void gluglu_free_texts(void) {\n"
+            "    GlugluTextNode *curr = gluglu_text_allocs;\n"
+            "    while (curr) {\n"
+            "        GlugluTextNode *next = curr->next;\n"
+            "        free(curr->data);\n"
+            "        free(curr);\n"
+            "        curr = next;\n"
+            "    }\n"
+            "    gluglu_text_allocs = NULL;\n"
+            "}\n\n"
             "static inline void gluglu_input_error(const char *type) {\n"
             "    fprintf(stderr, \"Erro: entrada invalida para %%s.\\n\", type);\n"
             "    exit(EXIT_FAILURE);\n"
@@ -392,10 +497,46 @@ void generate_code(ASTNode *root, FILE *out) {
             "static inline char *gluglu_read_text(void) {\n"
             "    char *line = gluglu_read_line();\n"
             "    if (!line) gluglu_input_error(\"texto\");\n"
+            "    GlugluTextNode *node = (GlugluTextNode *)malloc(sizeof(GlugluTextNode));\n"
+            "    if (!node) {\n"
+            "        free(line);\n"
+            "        gluglu_memory_error();\n"
+            "    }\n"
+            "    node->data = line;\n"
+            "    node->next = gluglu_text_allocs;\n"
+            "    gluglu_text_allocs = node;\n"
+            "    if (!gluglu_cleanup_registered) {\n"
+            "        atexit(gluglu_free_texts);\n"
+            "        gluglu_cleanup_registered = true;\n"
+            "    }\n"
             "    return line;\n"
             "}\n\n");
 
-    // 1. Emite definições de funções e procedimentos (CHOCA / NINHO) no escopo global
+    // Identifica a última sub-rotina no nível raiz para promover variáveis globais anteriores
+    ASTNode *last_func = NULL;
+    for (ASTNode *curr = root; curr; curr = curr->next) {
+        if (curr->type == NODE_FUNC_DECL) {
+            last_func = curr;
+        }
+    }
+
+    // 1. Declara variáveis globais visíveis a sub-rotinas
+    bool emitted_globals = false;
+    if (last_func) {
+        for (ASTNode *curr = root; curr && curr != last_func; curr = curr->next) {
+            if (curr->type == NODE_VAR_DECL) {
+                fprintf(out, "static %s ", curr->name);
+                emit_identifier(out, curr->left->name);
+                fprintf(out, ";\n");
+                emitted_globals = true;
+            }
+        }
+        if (emitted_globals) {
+            fprintf(out, "\n");
+        }
+    }
+
+    // 2. Emite definições de funções e procedimentos (CHOCA / NINHO) no escopo global
     ASTNode *curr = root;
     while (curr) {
         if (curr->type == NODE_FUNC_DECL) {
@@ -403,6 +544,9 @@ void generate_code(ASTNode *root, FILE *out) {
             emit_identifier(out, curr->name);
             fprintf(out, "(");
             ASTNode *param = curr->extra;
+            if (!param) {
+                fprintf(out, "void");
+            }
             while (param) {
                 fprintf(out, "%s ", datatype_to_str(param->data_type));
                 emit_identifier(out, param->name);
@@ -410,15 +554,15 @@ void generate_code(ASTNode *root, FILE *out) {
                 param = param->next;
             }
             fprintf(out, ") {\n");
-            emit_stmt_list(curr->right, out, 1);
+            emit_stmt_list(curr->right, out, 1, NULL, &temp_counter);
             fprintf(out, "}\n\n");
         }
         curr = curr->next;
     }
 
-    // 2. Emite a função principal main() com os demais comandos
-    fprintf(out, "int main() {\n");
-    emit_stmt_list(root, out, 1);
+    // 3. Emite a função principal main() com os demais comandos
+    fprintf(out, "int main(void) {\n");
+    emit_stmt_list(root, out, 1, last_func, &temp_counter);
     fprintf(out, "    return 0;\n}\n");
 }
 
@@ -530,7 +674,9 @@ static void print_ast_node(ASTNode *node, FILE *out, int indent) {
                 fprintf(out, "[LIT_INT] %d (int)\n", node->int_val);
                 break;
             case NODE_NUM_REAL:
-                fprintf(out, "[LIT_REAL] %f (double)\n", node->real_val);
+                fprintf(out, "[LIT_REAL] ");
+                emit_real_literal(out, node->real_val);
+                fprintf(out, " (double)\n");
                 break;
             case NODE_BOOL:
                 fprintf(out, "[LIT_BOOL] %s (bool)\n", node->int_val ? "true" : "false");

@@ -1,0 +1,30 @@
+glu: a : inteiro <- 3;
+glu: b : inteiro <- 5;
+glu: c : inteiro <- 10;
+glu: d : inteiro <- 2;
+glu: ok : booleano <- c > d;
+glu: seta : texto <- <-seta>;
+glu: menor_igual : texto <- <=menor>;
+glu: pequeno : real <- 0.0000001;
+
+ok <- a >= d;
+
+IFGLU (a <= b and c > d) {
+    GORGOREJA(ok);
+}
+
+IFGLU (a <= b and seta == <-seta>) {
+    GORGOREJA(seta);
+    GORGOREJA(menor_igual);
+}
+
+IFGLU (pequeno > 0.0) {
+    GORGOREJA(true);
+}
+
+glu: x : inteiro <- 10;
+{
+    glu: x : inteiro <- x + 1;
+    GORGOREJA(x);
+}
+GORGOREJA(x);

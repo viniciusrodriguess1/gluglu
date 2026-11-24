@@ -1,0 +1,36 @@
+glu: fator : inteiro <- 2;
+
+NINHO incrementar_fator() {
+    fator <- fator + 1;
+}
+
+CHOCA multiplicar_por_fator(inteiro v) {
+    RETORNAGLU v * fator;
+}
+
+CHOCA contagem_texto(inteiro n) {
+    IFGLU (n <= 0) {
+        RETORNAGLU <fim>;
+    }
+    RETORNAGLU contagem_texto(n - 1);
+}
+
+CHOCA soma_real(inteiro n) {
+    IFGLU (n <= 0) {
+        RETORNAGLU 0.5;
+    }
+    RETORNAGLU 1.0 + soma_real(n - 1);
+}
+
+CHOCA fatorial(inteiro n) {
+    IFGLU (n <= 1) {
+        RETORNAGLU 1;
+    }
+    RETORNAGLU n * fatorial(n - 1);
+}
+
+incrementar_fator();
+GORGOREJA(multiplicar_por_fator(5));
+GORGOREJA(contagem_texto(3));
+GORGOREJA(soma_real(2));
+GORGOREJA(fatorial(5));

@@ -88,12 +88,12 @@ Da menor para a maior precedência:
 
 ### 5. Entrada e Saída
 
-* **Saída (`GORGOREJA`):** Imprime valores literais, variáveis ou o resultado de expressões na saída padrão, escolhendo automaticamente o especificador de formato (`%d`, `%f`, `%s`) de acordo com o tipo semântico do nó na AST.
+* **Saída (`GORGOREJA`):** Imprime valores literais, variáveis ou o resultado de expressões na saída padrão, escolhendo automaticamente o formato adequado conforme o tipo semântico na AST (`%d` para `inteiro`, `%f` para `real`, `%s` para `texto` e `true`/`false` para `booleano`).
   ```gluglu
   GORGOREJA(<Resultado:>);
   GORGOREJA(media);
   ```
-* **Entrada (`CISCA`):** Lê uma linha por chamada para uma variável previamente declarada. Para `texto`, aceita espaços e aumenta o armazenamento dinamicamente; valores numéricos e booleanos são validados antes da conversão.
+* **Entrada (`CISCA`):** Lê uma linha por chamada para uma variável previamente declarada. Para `texto`, aceita espaços e aumenta o armazenamento dinamicamente (com liberação automática ao encerrar o programa); valores numéricos e booleanos são validados antes da conversão.
   ```gluglu
   CISCA(idade);
   CISCA(mensagem);
@@ -131,7 +131,7 @@ Da menor para a maior precedência:
 * **Procedimentos sem retorno (`NINHO`):**
   ```gluglu
   NINHO alimentar_ave(texto ave, inteiro kg) {
-      GORGOREJA(<Alimentando>);
+      GORGOREJA(<Alimentando >);
       GORGOREJA(ave);
   }
   ```
@@ -141,7 +141,7 @@ Da menor para a maior precedência:
       RETORNAGLU valor * 2;
   }
   ```
-  Uma função deve retornar um valor em todos os caminhos. Procedimentos não retornam valores; chamadas verificam a espécie da sub-rotina, a quantidade e os tipos dos argumentos.
+  Sub-rotinas (`NINHO` e `CHOCA`) devem ser declaradas no escopo global. Uma função `CHOCA` deve retornar um valor compatível em todos os caminhos (inclusive em chamadas recursivas). Procedimentos não retornam valores; chamadas verificam a espécie da sub-rotina, a quantidade e os tipos dos argumentos.
 
 * **Exemplo combinado:** [exemplos/controle_funcao.glu](./exemplos/controle_funcao.glu) demonstra `CHOCA`, `RETORNAGLU`, `FORGLU` e `PULAGLU`.
 
@@ -198,22 +198,22 @@ expressao         ::= expressao ( "+" | "-" | "*" | "/" ) expressao
 
 ### Principais Decisões de Sintaxe e Semântica
 
-1. **Desambiguação Léxica entre `<texto>` e Operador `<`:**
-   Como literais de texto são delimitados por `<` e `>`, expressões como `a < b > c` poderiam ser confundidas com uma string literal. O analisador léxico mantém a flag contextual `can_be_relop`: imediatamente após identificadores, literais numéricos/booleanos ou `)`, o símbolo `<` é tratado como operador relacional (devolvendo o restante ao buffer via `yyless(1)`); nos demais contextos (como argumentos de `GORGOREJA(<texto>)` ou lado direito de `<-`), é reconhecido como `LIT_TEXTO`.
+1. **Desambiguação Léxica entre `<texto>` e Operadores `<`, `<=`, `<-`:**
+   Como literais de texto são delimitados por `<` e `>`, o analisador léxico mantém um estado contextual (`LEX_CTX_EXPR_START`, `LEX_CTX_AFTER_TYPE` e `LEX_CTX_AFTER_VALUE`) combinado a uma *start condition* exclusiva (`TEXT_LIT`). Assim, `<-`, `<=` e `<` são reconhecidos corretamente mesmo quando aparecem na mesma linha que `>` ou outros literais de texto, literais iniciados por `-` ou `=` (como `<-seta>` e `<=menor>`) são aceitos e literais de texto sem fechamento reportam erro léxico.
 2. **Inicialização Obrigatória (`glu: id : tipo <- expr;`):**
-   Impede o uso de variáveis com lixo de memória, garantindo que toda entrada na Tabela de Símbolos já nasça inicializada.
+   Impede o uso de variáveis com lixo de memória, garantindo que toda entrada na Tabela de Símbolos já nasça inicializada. Em caso de *shadowing* com autorreferência (ex.: `glu: x : inteiro <- x + 1;`), o gerador de C usa uma variável temporária para preservar a semântica sem *Undefined Behavior*.
 3. **Escopos Aninhados com Tabela Hash (`djb2`):**
-   Cada bloco `{ ... }`, laço `FORGLU`, procedimento `NINHO` ou função `CHOCA` cria um novo escopo encadeado ao escopo pai (`symtab_enter_scope` / `symtab_exit_scope`). Isso permite *shadowing* seguro em blocos internos, mas proíbe redeclarações no mesmo nível de escopo.
+   Cada bloco `{ ... }`, laço `FORGLU`, procedimento `NINHO` ou função `CHOCA` cria um novo escopo encadeado ao escopo pai (`symtab_enter_scope` / `symtab_exit_scope`). Variáveis globais declaradas antes de sub-rotinas são promovidas para o escopo de arquivo em C e inicializadas na ordem original dentro de `main()`.
 4. **Verificação de Tipos e Coerção Implícita:**
    * Operadores aritméticos (`+`, `-`, `*`, `/`) exigem operandos numéricos (`inteiro` ou `real`). Se um dos operandos for `real`, o resultado é promovido para `real`.
    * Variáveis do tipo `real` aceitam valores do tipo `inteiro` (promoção implícita), mas variáveis `inteiro` rejeitam `real` para evitar perda silenciosa de precisão.
    * Condições de `IFGLU`, `WHILEGLU` e `FORGLU` exigem expressões do tipo `booleano`.
 5. **Inferência de Tipo de Retorno em `CHOCA`:**
-   Funções declaradas com `CHOCA` têm seu tipo de retorno inferido a partir das instruções `RETORNAGLU`; retornos incompatíveis e caminhos sem retorno são rejeitados.
+   Funções declaradas com `CHOCA` têm seu tipo de retorno inferido a partir das instruções `RETORNAGLU` (incluindo suporte a funções recursivas de qualquer tipo); retornos incompatíveis e caminhos sem retorno são rejeitados.
 6. **Validação de sub-rotinas e laços:**
-   Chamadas verificam se o identificador é função/procedimento e se a aridade e os tipos dos argumentos correspondem à declaração. `STOPGLU` e `PULAGLU` só podem aparecer dentro de laços, e `RETORNAGLU` precisa corresponder ao contexto de função ou procedimento.
+   Sub-rotinas só podem ser declaradas no escopo global. Chamadas verificam se o identificador é função/procedimento e se a aridade e os tipos dos argumentos correspondem à declaração. `STOPGLU` e `PULAGLU` só podem aparecer dentro de laços, e `RETORNAGLU` precisa corresponder ao contexto de função ou procedimento.
 7. **Entrada e comparação de textos:**
-   `CISCA` lê linhas de texto com armazenamento dinâmico. Os operadores `==` e `!=` comparam o conteúdo dos textos, não os endereços dos ponteiros C.
+   `CISCA` lê linhas de texto com armazenamento dinâmico e liberação automática no encerramento do programa. Os operadores `==` e `!=` comparam o conteúdo dos textos, não os endereços dos ponteiros C.
 8. **Grafia dos operadores lógicos:**
    `and`, `or` e `not` são reconhecidos somente em letras minúsculas.
 
@@ -223,7 +223,9 @@ expressao         ::= expressao ( "+" | "-" | "*" | "/" ) expressao
 
 ```text
 .
-├── Makefile                       # Regras de compilação automatizadas
+├── .gitattributes                 # Padronização de finais de linha (LF)
+├── .gitignore                     # Arquivos gerados ignorados pelo Git
+├── Makefile                       # Regras de compilação e execução de testes
 ├── README.md                      # Documentação da linguagem e do compilador
 ├── src/
 │   ├── ast.h                      # Definições da Árvore Sintática Abstrata (AST)
@@ -239,12 +241,16 @@ expressao         ::= expressao ( "+" | "-" | "*" | "/" ) expressao
 │   ├── alimentacao.glu            # Programa 4: procedimento modular reutilizável (NINHO)
 │   └── controle_funcao.glu        # CHOCA, RETORNAGLU, FORGLU e PULAGLU
 └── tests/
+    ├── run_tests.sh               # Suíte automatizada de testes (make test)
     ├── valid/
-    │   ├── entrada_texto.glu       # Leitura dinâmica de linha e igualdade por conteúdo
-    │   └── operadores_logicos.glu  # Operadores and, or e not em minúsculas
+    │   ├── entrada_texto.glu           # Leitura dinâmica de linha e igualdade por conteúdo
+    │   ├── escopo_global_e_recursao.glu # Variáveis globais em sub-rotinas e recursão tipada
+    │   ├── operadores_logicos.glu      # Operadores and, or e not em minúsculas
+    │   └── operadores_relacionais.glu  # Desambiguação de <-, <=, <>, precisão real e shadowing
     └── invalid/
         ├── erro_lexico.glu
         ├── erro_comentario_nao_fechado.glu
+        ├── erro_texto_nao_fechado.glu
         ├── erro_sintatico.glu
         ├── erro_nao_declarada.glu
         ├── erro_tipo_incompativel.glu
@@ -263,6 +269,8 @@ expressao         ::= expressao ( "+" | "-" | "*" | "/" ) expressao
         ├── erro_tipos_retorno.glu
         ├── erro_procedimento_como_expressao.glu
         ├── erro_subrotina_como_variavel.glu
+        ├── erro_subrotina_aninhada.glu
+        ├── erro_menos_unario_texto.glu
         ├── erro_and_maiuscula.glu
         ├── erro_or_maiuscula.glu
         └── erro_not_maiuscula.glu
@@ -293,9 +301,11 @@ make
 
 ### 2. Visualizar a AST de um Programa GLUGLU
 
-Use a flag `--ast` (ou `-a`) para inspecionar a Árvore Sintática Abstrata anotada com os tipos semânticos:
+Use a flag `--ast` (ou `-a`) para inspecionar a Árvore Sintática Abstrata anotada com os tipos semânticos (via redirecionamento ou passando o caminho do arquivo):
 
 ```bash
+./glugluc --ast exemplos/media.glu
+# ou
 ./glugluc --ast < exemplos/media.glu
 ```
 
@@ -303,30 +313,21 @@ Use a flag `--ast` (ou `-a`) para inspecionar a Árvore Sintática Abstrata anot
 
 ```bash
 # 1. Traduz GLUGLU para C
-./glugluc < exemplos/media.glu > saida.c
+./glugluc exemplos/media.glu > saida.c
 
 # 2. Compila o código C gerado
-gcc saida.c -o programa_gluglu
+gcc -std=c99 saida.c -o programa_gluglu
 
 # 3. Executa o binário final
 ./programa_gluglu
 ```
 
-### 4. Verificar os Exemplos Manualmente
+### 4. Executar a Suíte Automatizada de Testes
 
-Os programas de demonstração estão em `exemplos/`, e os casos válidos e inválidos para conferência manual estão em `tests/valid/` e `tests/invalid/`. Não há uma suíte automatizada: compile o tradutor e teste cada arquivo conforme necessário.
+O alvo `make test` executa `tests/run_tests.sh`, validando a CLI, todos os programas em `exemplos/` e `tests/valid/` (AST, transpilação, compilação C99 com `-Wall -Wextra -Werror` e execução) e todos os casos de erro em `tests/invalid/`:
 
 ```bash
-# Compile o tradutor
-make
-
-# Caso válido: traduza, compile o C gerado e execute
-./glugluc < exemplos/media.glu > saida.c
-gcc -std=c99 saida.c -o programa_gluglu
-./programa_gluglu
-
-# Caso inválido: confira se o tradutor apresenta o erro esperado
-./glugluc < tests/invalid/erro_lexico.glu
+make test
 ```
 
 ### Limpar os arquivos de build
@@ -346,39 +347,39 @@ glu: nota1 : real <- 8.5;
 glu: nota2 : real <- 7.0;
 glu: media : real <- (nota1 * 2.0 + nota2 * 3.0) / 5.0;
 
-GORGOREJA(<Media Ponderada:>);
+GORGOREJA(<Media Ponderada: >);
 GORGOREJA(media);
 ```
 
-**AST Gerada (`./glugluc --ast < exemplos/media.glu`):**
+**AST Gerada (`./glugluc --ast exemplos/media.glu`):**
 ```text
 === AST (Arvore Sintatica Abstrata) ===
 [VAR_DECL] nota1 : double
-    [LIT_REAL] 8.500000 (double)
+    [LIT_REAL] 8.5 (double)
 [VAR_DECL] nota2 : double
-    [LIT_REAL] 7.000000 (double)
+    [LIT_REAL] 7.0 (double)
 [VAR_DECL] media : double
     [BIN_OP '/'] (double)
         [BIN_OP '+'] (double)
             [BIN_OP '*'] (double)
                 [ID] nota1 (double)
-                [LIT_REAL] 2.000000 (double)
+                [LIT_REAL] 2.0 (double)
             [BIN_OP '*'] (double)
                 [ID] nota2 (double)
-                [LIT_REAL] 3.000000 (double)
-        [LIT_REAL] 5.000000 (double)
+                [LIT_REAL] 3.0 (double)
+        [LIT_REAL] 5.0 (double)
 [GORGOREJA]
-    [LIT_TEXTO] <Media Ponderada:> (char*)
+    [LIT_TEXTO] <Media Ponderada: > (char*)
 [GORGOREJA]
     [ID] media (double)
 ```
 
 **Trecho principal do C emitido** (o tradutor também inclui funções auxiliares de entrada):
 ```c
-int main() {
-    double gluglu_user_nota1 = 8.500000;
-    double gluglu_user_nota2 = 7.000000;
-    double gluglu_user_media = (((gluglu_user_nota1 * 2.000000) + (gluglu_user_nota2 * 3.000000)) / 5.000000);
+int main(void) {
+    double gluglu_user_nota1 = 8.5;
+    double gluglu_user_nota2 = 7.0;
+    double gluglu_user_media = (((gluglu_user_nota1 * 2.0) + (gluglu_user_nota2 * 3.0)) / 5.0);
     printf("%s\n", "Media Ponderada: ");
     printf("%f\n", (double)(gluglu_user_media));
     return 0;
@@ -398,7 +399,7 @@ Media Ponderada:
 **Entrada (`exemplos/alimentacao.glu`):**
 ```gluglu
 NINHO alimentar_ave(texto ave, inteiro kg) {
-    GORGOREJA(<Alimentando>);
+    GORGOREJA(<Alimentando >);
     GORGOREJA(ave);
     GORGOREJA(< com >);
     GORGOREJA(kg);
@@ -419,7 +420,7 @@ void gluglu_user_alimentar_ave(char* gluglu_user_ave, int gluglu_user_kg) {
     printf("%s\n", " kg de milho.");
 }
 
-int main() {
+int main(void) {
     gluglu_user_alimentar_ave("Pavoa", 3);
     gluglu_user_alimentar_ave("Galo", 2);
     return 0;

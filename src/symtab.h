@@ -56,9 +56,10 @@ bool symtab_set_signature(Symbol *symbol, const DataType *param_types, size_t pa
 Symbol *symtab_lookup(SymbolTable *st, const char *name);
 Symbol *symtab_lookup_current_scope(SymbolTable *st, const char *name);
 
-// Utilitários de tipos
+// Utilitários de tipos e strings
 DataType str_to_datatype(const char *str);
 const char *datatype_to_str(DataType type);
 bool is_type_compatible(DataType target, DataType src);
+char *gluglu_strdup(const char *str);
 
 #endif
