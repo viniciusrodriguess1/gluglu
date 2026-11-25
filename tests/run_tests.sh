@@ -78,6 +78,26 @@ run_valid_case() {
             grep -q "7.600000" "$out_file"
             grep -q "DOIS_PONTOS" "$tok_file"
             ;;
+        alimentacao)
+            "$COMPILER" --run "$file" > "$out_file"
+            printf 'Alimentando \nPavoa\n com \n3\n kg de milho.\nAlimentando \nGalo\n com \n2\n kg de milho.\n' > "$TMP_DIR/alimentacao.expected"
+            diff -u "$TMP_DIR/alimentacao.expected" "$out_file"
+            ;;
+        contador)
+            "$COMPILER" --run "$file" > "$out_file"
+            printf '5\n4\n3\n2\nInterrompendo antecipadamente...\nFim do laco!\n' > "$TMP_DIR/contador.expected"
+            diff -u "$TMP_DIR/contador.expected" "$out_file"
+            ;;
+        controle_funcao)
+            "$COMPILER" --run "$file" > "$out_file"
+            printf '0\n2\n6\n8\n10\n' > "$TMP_DIR/controle_funcao.expected"
+            diff -u "$TMP_DIR/controle_funcao.expected" "$out_file"
+            ;;
+        operadores_logicos)
+            "$COMPILER" --run "$file" > "$out_file"
+            printf 'true\ntrue\n' > "$TMP_DIR/operadores_logicos.expected"
+            diff -u "$TMP_DIR/operadores_logicos.expected" "$out_file"
+            ;;
         *)
             "$COMPILER" --run "$file" > "$out_file"
             ;;
