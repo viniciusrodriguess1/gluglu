@@ -31,11 +31,66 @@ O C foi escolhido por mapear diretamente os tipos estáticos e as estruturas imp
 | **5. Geração de Código Alvo (C)** | ✅ Concluído | `src/codegen.h`, `src/codegen.c` | Travessia da AST emitindo código C99 estruturado com globais/funções no escopo de arquivo e bloco principal em `main()`. |
 | **6. Driver / CLI** | ✅ Concluído | `src/main.c` | Interface de linha de comando para compilar direto para executável (`-o`), rodar (`--run`), emitir C (`--emit-c`), inspecionar AST (`--ast`) e tokens (`--tokens`). |
 
+#### Fluxo interno das fases
+
+```text
+arquivo.glu
+    |
+    v
+src/lexer.l  (Flex) ----> tokens
+    |
+    v
+src/parser.y (Bison) ---> AST tipada
+    |
+    v
+src/semantic.c + src/symtab.c
+    |                           |
+    | verifica tipos, escopos,  +--> src/symtab.h/symtab.c
+    | aridade, retornos e laços
+    v
+src/ast.c + src/ast.h
+    |
+    v
+src/codegen.c
+    |
+    v
+gcc (C99) ---> executavel nativo
+```
+
+O driver em `src/main.c` inicia a leitura léxica e a análise sintática. A análise semântica percorre o mesmo conjunto de nós construído pelo parser e usa a tabela de símbolos para resolver identificadores e validar operações, chamadas e retornos. Depois da geração, o driver pode emitir o C ou usar `gcc` para criar e, em `--run`, executar o binário temporário.
+
+* **AST (`ASTNode`):** a estrutura em `src/ast.h` representa expressões e comandos por meio de `NodeType`, tipo semântico (`data_type`), identificador ou literal (`name`, `int_val`, `real_val`, `op`) e links encadeados (`left`, `right`, `extra`, `init`, `next`). A AST funciona como representação intermediária comum: o analisador semântico anota tipos, a AST tipada pode ser exibida por `--ast` e o gerador percorre os nós recursivamente para emitir C. Listas de comandos, argumentos e parâmetros são encadeadas pelo campo `next`.
+* **Tabela de símbolos:** `SymbolTable` mantém uma pilha/estrutura encadeada de `Scope`. Cada escopo possui 64 buckets; o índice é calculado pela função hash djb2 (`h = h * 33 + c`) em `src/symtab.c`, e colisões são resolvidas por encadeamento em `Symbol.next`. `symtab_lookup` procura do escopo atual até os pais, permitindo *shadowing*, enquanto `symtab_lookup_current_scope` impede redeclaração no mesmo escopo. Símbolos armazenam tipo, espécie (variável, função ou procedimento), parâmetros e estado de inicialização.
+* **Gerador de C:** `src/codegen.c` usa `emit_identifier()` para prefixar todos os identificadores de usuário com `gluglu_user_`, evitando colisão com nomes da implementação C. Antes das definições de sub-rotinas, variáveis globais anteriores à última sub-rotina do nível raiz são declaradas como `static`; a inicialização das globais é feita em `main()` na mesma posição em que aparecem no programa. Assim, funções podem acessar globais C estáticas. Declarações locais usam o mesmo prefixo e respeitam os blocos C gerados. Em inicializações com autorreferência, como `glu: x : inteiro <- x + 1` em um escopo interno, o gerador cria `gluglu_init_<n>` antes de declarar/atribuir `gluglu_user_x`, evitando leitura de uma variável ainda não inicializada. `CISCA` é traduzido para `gluglu_read_int`, `gluglu_read_real`, `gluglu_read_bool` ou `gluglu_read_text`; texto é lido por linha em buffer que cresce dinamicamente e é registrado em uma lista ligada para ser liberada por `atexit`.
+
 ---
 
 ## 🦃 Especificação da Linguagem GLUGLU
 
 A **GLUGLU** é uma linguagem imperativa, de tipagem estática e forte, com sintaxe inspirada em temática avícola/ornitológica.
+
+### Funcionalidades obrigatórias e extensões
+
+A classificação abaixo confronta o núcleo do compilador com os recursos ampliados implementados pelo grupo. Os itens marcados como obrigatórios correspondem ao conjunto central da proposta aprovada; os demais foram acrescentados como extensões.
+
+| Classificação | Funcionalidade | Evidência no projeto |
+| :--- | :--- | :--- |
+| Obrigatório | Declarações e atribuições tipadas, com inicialização obrigatória | `glu: nome : tipo <- expressao;` |
+| Obrigatório | Tipos inteiro, real e texto | Literais `LIT_INT`, `LIT_REAL`, `LIT_TEXTO` e tipos semânticos correspondentes |
+| Obrigatório | Operadores aritméticos `+`, `-`, `*`, `/` | Gramática Bison com precedência multiplicativa e aditiva |
+| Obrigatório | Comandos de entrada e saída | `CISCA` e `GORGOREJA` |
+| Obrigatório | Condicional e laços básicos | `IFGLU`, `WHILEGLU` e `FORGLU` |
+| Obrigatório | Comentários de linha e bloco | `%%` e `%glu ... %glu` |
+| Obrigatório | Análise léxica, sintática, semântica e geração de C executável | Flex, Bison, AST, tabela de símbolos e `gcc` |
+| Extensão | Tipo booleano e literais `true`/`false` | `TIPO` booleano e `LIT_BOOL` |
+| Extensão | Operadores relacionais `<`, `<=`, `>`, `>=`, `==`, `!=` | Gramática, semântica e emissão C |
+| Extensão | Operadores lógicos `and`, `or`, `not` em minúsculas | Precedência lógica, checagem de operandos booleanos |
+| Extensão | Procedimentos `NINHO` com parâmetros | Declaração global, aridade e tipos dos argumentos |
+| Extensão | Funções `CHOCA` com parâmetros e `RETORNAGLU` | Tipo inferido, todos os caminhos com retorno e compatibilidade |
+| Extensão | Recursão de funções | Chamadas recursivas tipadas em `escopo_global_e_recursao.glu` |
+| Extensão | Escopos aninhados e shadowing | Pilha de escopos, busca no pai e temporários do gerador |
+| Extensão | `STOPGLU` e `PULAGLU` | Controle dentro de laços |
+| Extensão | Texto com entrada dinâmica e comparação por conteúdo | Buffer crescente em `CISCA` e `strcmp` em `==`/`!=` |
 
 ### 1. Tipos de Dados Suportados
 
@@ -197,6 +252,52 @@ expressao         ::= expressao ( "+" | "-" | "*" | "/" ) expressao
                     | chamada_func | ID ;
 ```
 
+### Regras léxicas dos terminais
+
+As regras abaixo descrevem os padrões usados pelo Flex em `src/lexer.l`. Espaços em branco e quebras de linha são ignorados fora dos literais de texto e comentários.
+
+```ebnf
+ID                ::= LETRA ( LETRA | DIGITO | "_" )* ;
+LETRA             ::= "A" | ... | "Z" | "a" | ... | "z" ;
+DIGITO            ::= "0" | "1" | "2" | "3" | "4"
+                    | "5" | "6" | "7" | "8" | "9" ;
+
+TIPO              ::= "inteiro" | "real" | "booleano" | "texto" ;
+LIT_INT           ::= DIGITO+ ;
+LIT_REAL          ::= DIGITO+ "." DIGITO+ ;
+LIT_BOOL          ::= "true" | "false" ;
+LIT_TEXTO         ::= "<" TEXTO_CONTEUDO* ">" ;
+TEXTO_CONTEUDO    ::= qualquer caractere exceto ">" e quebra de linha ;
+
+COMENTARIO_LINHA  ::= "%%" qualquer_caractere_sem_quebra* ;
+COMENTARIO_BLOCO  ::= "%glu" qualquer_sequencia* "%glu" ;
+
+ATRIB             ::= "<-" ;
+DOIS_PONTOS       ::= ":" ;
+PONTO_VIRGULA     ::= ";" ;
+VIRGULA           ::= "," ;
+ABRE_CHAVE        ::= "{" ;
+FECHA_CHAVE       ::= "}" ;
+ABRE_PAREN        ::= "(" ;
+FECHA_PAREN       ::= ")" ;
+
+OP_MAIS           ::= "+" ;
+OP_MENOS          ::= "-" ;
+OP_MULT           ::= "*" ;
+OP_DIV            ::= "/" ;
+OP_MENOR          ::= "<" ;
+OP_MAIOR          ::= ">" ;
+OP_LE             ::= "<=" ;
+OP_GE             ::= ">=" ;
+OP_EQ             ::= "==" ;
+OP_NE             ::= "!=" ;
+OP_AND            ::= "and" ;
+OP_OR             ::= "or" ;
+OP_NOT            ::= "not" ;
+```
+
+Os literais inteiros passam por `strtol` e são rejeitados fora da faixa de `int`. Os literais reais passam por `strtod` e precisam conter uma parte decimal obrigatória. Símbolos não reconhecidos geram `Erro lexico`; comentário de bloco ou texto sem fechamento também são erros léxicos.
+
 ### Principais Decisões de Sintaxe e Semântica
 
 1. **Desambiguação Léxica entre `<texto>` e Operadores `<`, `<=`, `<-`:**
@@ -338,6 +439,49 @@ O alvo `make test` executa `tests/run_tests.sh`, validando a CLI, todos os progr
 ```bash
 make test
 ```
+
+#### Casos cobertos pela suíte
+
+As entradas abaixo usam uma entrada vazia, exceto nos casos que declaram `CISCA`.
+
+| Arquivo | Entrada | Saída ou erro esperado |
+| :--- | :--- | :--- |
+| `exemplos/media.glu` | — | `Media Ponderada:` na linha 1 e `7.600000` na linha 2 |
+| `exemplos/idade.glu` | `20` | `Digite sua idade: ` e `Acesso Liberado!` |
+| `exemplos/alimentacao.glu` | — | `Alimentando `, `Pavoa`, ` com `, `3`, ` kg de milho.`, `Alimentando `, `Galo`, ` com `, `2`, ` kg de milho.`; cada comando gera uma linha |
+| `exemplos/contador.glu` | — | `5`, `4`, `3`, `2`, `Interrompendo antecipadamente...`, `Fim do laco!` |
+| `exemplos/controle_funcao.glu` | — | `0`, `2`, `6`, `8`, `10` |
+| `tests/valid/entrada_texto.glu` | `42`, `3.5`, `true`, frase longa do teste | `Digite uma frase: `, `42`, `3.500000`, `true`, frase lida, `Escapes: "aspas" e barra \`, `Conteudo igual.` |
+| `tests/valid/escopo_global_e_recursao.glu` | — | `15`, `fim`, `2.500000`, `120` |
+| `tests/valid/operadores_logicos.glu` | — | `true`, `true` |
+| `tests/valid/operadores_relacionais.glu` | — | `true`, `-seta`, `=menor`, `true`, `11`, `10` |
+| `tests/invalid/erro_lexico.glu` | — | `Erro lexico`: símbolo `@` não reconhecido |
+| `tests/invalid/erro_inteiro_overflow.glu` | — | `Erro lexico`: inteiro fora da faixa suportada |
+| `tests/invalid/erro_comentario_nao_fechado.glu` | — | `Erro lexico`: comentário `%glu` não fechado |
+| `tests/invalid/erro_texto_nao_fechado.glu` | — | `Erro lexico`: literal de texto não fechado |
+| `tests/invalid/erro_sintatico.glu` | — | `Erro sintatico`: declaração sem `;` |
+| `tests/invalid/erro_and_maiuscula.glu` | — | `Erro sintatico`: `And` não é o operador `and` |
+| `tests/invalid/erro_not_maiuscula.glu` | — | `Erro sintatico`: `NOT` não é o operador `not` |
+| `tests/invalid/erro_or_maiuscula.glu` | — | `Erro sintatico`: `OR` não é o operador `or` |
+| `tests/invalid/erro_nao_declarada.glu` | — | `Erro semantico`: variável não declarada |
+| `tests/invalid/erro_tipo_incompativel.glu` | — | `Erro semantico`: atribuição de texto a inteiro |
+| `tests/invalid/erro_condicao_nao_booleana.glu` | — | `Erro semantico`: condição não booleana |
+| `tests/invalid/erro_redeclaracao.glu` | — | `Erro semantico`: variável redeclarada no mesmo escopo |
+| `tests/invalid/erro_chamada_variavel.glu` | — | `Erro semantico`: variável usada como função |
+| `tests/invalid/erro_aridade.glu` | — | `Erro semantico`: número de argumentos incompatível |
+| `tests/invalid/erro_tipo_argumento.glu` | — | `Erro semantico`: argumento com tipo incompatível |
+| `tests/invalid/erro_stop_fora_laco.glu` | — | `Erro semantico`: `STOPGLU` fora de laço |
+| `tests/invalid/erro_pula_fora_laco.glu` | — | `Erro semantico`: `PULAGLU` fora de laço |
+| `tests/invalid/erro_retorno_fora_subrotina.glu` | — | `Erro semantico`: `RETORNAGLU` fora de sub-rotina |
+| `tests/invalid/erro_retorno_em_procedimento.glu` | — | `Erro semantico`: procedimento retornando valor |
+| `tests/invalid/erro_funcao_retorno_vazio.glu` | — | `Erro semantico`: função com `RETORNAGLU` sem valor |
+| `tests/invalid/erro_funcao_sem_retorno.glu` | — | `Erro semantico`: função sem retorno |
+| `tests/invalid/erro_funcao_retorno_condicional.glu` | — | `Erro semantico`: nem todos os caminhos retornam |
+| `tests/invalid/erro_tipos_retorno.glu` | — | `Erro semantico`: retornos com tipos incompatíveis |
+| `tests/invalid/erro_procedimento_como_expressao.glu` | — | `Erro semantico`: procedimento usado em expressão |
+| `tests/invalid/erro_subrotina_como_variavel.glu` | — | `Erro semantico`: sub-rotina usada como variável |
+| `tests/invalid/erro_subrotina_aninhada.glu` | — | `Erro semantico`: sub-rotina declarada fora do escopo global |
+| `tests/invalid/erro_menos_unario_texto.glu` | — | `Erro semantico`: menos unário aplicado a texto |
 
 ### Limpar os arquivos de build
 ```bash
