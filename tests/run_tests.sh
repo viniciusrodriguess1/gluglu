@@ -123,7 +123,24 @@ for file in tests/invalid/*.glu; do
         echo "FALHA: '$file' falhou sem emitir mensagem de erro." >&2
         exit 1
     fi
-    echo "  [OK] $file (rejeitado conforme esperado)"
+    base="$(basename "$file" .glu)"
+    case "$base" in
+        erro_comentario_nao_fechado|erro_inteiro_overflow|erro_lexico|erro_texto_nao_fechado)
+            expected_category="Erro lexico"
+            ;;
+        erro_sintatico|erro_and_maiuscula|erro_not_maiuscula|erro_or_maiuscula)
+            expected_category="Erro sintatico"
+            ;;
+        *)
+            expected_category="Erro semantico"
+            ;;
+    esac
+    if ! grep -q "$expected_category" "$err_file"; then
+        echo "FALHA: '$file' deveria emitir '$expected_category', mas o stderr foi:" >&2
+        cat "$err_file" >&2
+        exit 1
+    fi
+    echo "  [OK] $file (rejeitado com $expected_category)"
     pass_count=$((pass_count + 1))
 done
 
