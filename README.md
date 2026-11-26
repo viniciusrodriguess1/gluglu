@@ -66,6 +66,10 @@ O driver em `src/main.c` aciona o analisador léxico (`src/lexer.l`) e o parser 
 
 A **GLUGLU** é uma linguagem imperativa, de tipagem estática e forte, com sintaxe inspirada em temática avícola/ornitológica.
 
+### Finalidade da Linguagem
+
+A finalidade da GLUGLU é servir como uma linguagem didática para o ensino de lógica de programação estruturada e para a demonstração prática de todas as etapas de construção de um compilador (análise léxica, análise sintática, AST, tabela de símbolos, análise semântica e tradução para código nativo via C99), aliando legibilidade em português com uma sintaxe temática lúdica e regras de tipagem rigorosas.
+
 ### Funcionalidades obrigatórias e extensões
 
 A classificação abaixo confronta o núcleo do compilador com os recursos ampliados implementados pelo grupo. Os itens marcados como obrigatórios correspondem ao conjunto central da proposta aprovada; os demais foram acrescentados como extensões.
@@ -249,11 +253,26 @@ expressao         ::= expressao ( "+" | "-" | "*" | "/" ) expressao
                     | chamada_func | ID ;
 ```
 
-### Regras léxicas dos terminais
+### Conjunto de tokens e regras léxicas
 
-As regras abaixo descrevem os padrões usados pelo Flex em `src/lexer.l`. Espaços em branco e quebras de linha são ignorados fora dos literais de texto e comentários.
+As regras abaixo descrevem todos os tokens nomeados e padrões reconhecidos pelo Flex em `src/lexer.l` (também inspecionáveis via `./glugluc --tokens`). Espaços em branco e quebras de linha são ignorados fora dos literais de texto e comentários.
 
 ```ebnf
+(* Palavras-chave *)
+GLU               ::= "glu" ;
+GORGOREJA         ::= "GORGOREJA" ;
+CISCA             ::= "CISCA" ;
+IFGLU             ::= "IFGLU" ;
+ELSEGLU           ::= "ELSEGLU" ;
+WHILEGLU          ::= "WHILEGLU" ;
+FORGLU            ::= "FORGLU" ;
+STOPGLU           ::= "STOPGLU" ;
+PULAGLU           ::= "PULAGLU" ;
+CHOCA             ::= "CHOCA" ;
+NINHO             ::= "NINHO" ;
+RETORNAGLU        ::= "RETORNAGLU" ;
+
+(* Identificadores, tipos e literais *)
 ID                ::= ( LETRA | "_" ) ( LETRA | DIGITO | "_" )* ;
 LETRA             ::= "A" | ... | "Z" | "a" | ... | "z" ;
 DIGITO            ::= "0" | "1" | "2" | "3" | "4"
@@ -580,3 +599,18 @@ int main(void) {
     return 0;
 }
 ```
+
+---
+
+## 🤖 Uso de Inteligência Artificial
+
+Em conformidade com as diretrizes da disciplina, declaramos o uso de ferramentas de Inteligência Artificial como apoio durante o desenvolvimento do projeto:
+
+* **Ferramenta utilizada:** Google Antigravity (modelos Gemini).
+* **Atividades em que foi empregada:**
+  * Revisão de código das fases do compilador (`lexer.l`, `parser.y`, `semantic.c`, `symtab.c`, `ast.c`, `codegen.c` e `main.c`);
+  * Identificação e correção de casos de borda (como validação de entrada no `CISCA`, revalidação semântica em funções `CHOCA` recursivas e precisão de linha em erros de condição);
+  * Ampliação da suíte de testes automatizados (`tests/run_tests.sh` e casos válidos/inválidos);
+  * Revisão e padronização da documentação técnica (`README.md`).
+
+Todas as decisões de projeto, especificações da linguagem, validações com compilação/testes e o funcionamento integral do compilador foram revisados e validados pela equipe, que se responsabiliza pelo código entregue e pelo domínio técnico para a apresentação.
