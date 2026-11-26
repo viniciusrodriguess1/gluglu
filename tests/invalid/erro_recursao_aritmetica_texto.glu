@@ -1,0 +1,8 @@
+CHOCA repetir(inteiro n) {
+    IFGLU (n <= 0) {
+        RETORNAGLU <fim>;
+    }
+    RETORNAGLU 1 + repetir(n - 1);
+}
+
+GORGOREJA(repetir(1));

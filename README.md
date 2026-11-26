@@ -18,7 +18,7 @@ Este projeto implementa um **compilador/transpilador completo** para a linguagem
 
 ### Justificativa da Linguagem de Destino
 
-O C foi escolhido por mapear diretamente os tipos estáticos e as estruturas imperativas da GLUGLU, produzir código nativo compilável com ferramentas amplamente disponíveis (`gcc` e `clang`) e permitir inspecionar o resultado da tradução (`--emit-c`). A escolha deve constar na proposta inicial e ser aprovada pelo professor; a aprovação é uma etapa acadêmica externa ao repositório.
+O C foi escolhido por mapear diretamente os tipos estáticos e as estruturas imperativas da GLUGLU, produzir código nativo compilável com ferramentas amplamente disponíveis (`gcc` e `clang`) e permitir inspecionar o resultado da tradução (`--emit-c`).
 
 ### Arquitetura e Progresso da Implementação
 
@@ -37,27 +37,24 @@ O C foi escolhido por mapear diretamente os tipos estáticos e as estruturas imp
 arquivo.glu
     |
     v
-src/lexer.l  (Flex) ----> tokens
+src/lexer.l  (Flex) ----> tokens (--tokens)
     |
     v
-src/parser.y (Bison) ---> AST tipada
+src/parser.y (Bison) ---> acoes dirigidas por sintaxe
+    |                         |
+    |                         +--> src/semantic.c + src/symtab.c
+    |                         |    (escopos, tipos, aridade, retornos e lacos)
+    |                         |
+    |                         +--> src/ast.c + src/ast.h
+    |                              (construcao da AST tipada, --ast)
+    v
+src/codegen.c ------------> codigo C99 (--emit-c)
     |
     v
-src/semantic.c + src/symtab.c
-    |                           |
-    | verifica tipos, escopos,  +--> src/symtab.h/symtab.c
-    | aridade, retornos e laços
-    v
-src/ast.c + src/ast.h
-    |
-    v
-src/codegen.c
-    |
-    v
-gcc (C99) ---> executavel nativo
+gcc (C99) ----------------> executavel nativo (-o / --run)
 ```
 
-O driver em `src/main.c` inicia a leitura léxica e a análise sintática. A análise semântica percorre o mesmo conjunto de nós construído pelo parser e usa a tabela de símbolos para resolver identificadores e validar operações, chamadas e retornos. Depois da geração, o driver pode emitir o C ou usar `gcc` para criar e, em `--run`, executar o binário temporário.
+O driver em `src/main.c` aciona o analisador léxico (`src/lexer.l`) e o parser (`src/parser.y`). A análise semântica é executada de forma dirigida por sintaxe nas ações do Bison: enquanto a AST é construída (`src/ast.c`), `src/semantic.c` consulta e atualiza a tabela de símbolos (`src/symtab.c`) para validar declarações, tipos, chamadas, retornos e laços (incluindo revalidação dos nós que dependem de chamadas recursivas em `CHOCA`). Depois que a AST tipada está pronta, o driver pode exibi-la (`--ast`), emitir o código C (`--emit-c`) ou invocar `gcc` para gerar e, em `--run`, executar o binário nativo.
 
 * **AST (`ASTNode`):** a estrutura em `src/ast.h` representa expressões e comandos por meio de `NodeType`, tipo semântico (`data_type`), identificador ou literal (`name`, `int_val`, `real_val`, `op`) e links encadeados (`left`, `right`, `extra`, `init`, `next`). A AST funciona como representação intermediária comum: o analisador semântico anota tipos, a AST tipada pode ser exibida por `--ast` e o gerador percorre os nós recursivamente para emitir C. Listas de comandos, argumentos e parâmetros são encadeadas pelo campo `next`.
 * **Tabela de símbolos:** `SymbolTable` mantém uma pilha/estrutura encadeada de `Scope`. Cada escopo possui 64 buckets; o índice é calculado pela função hash djb2 (`h = h * 33 + c`) em `src/symtab.c`, e colisões são resolvidas por encadeamento em `Symbol.next`. `symtab_lookup` procura do escopo atual até os pais, permitindo *shadowing*, enquanto `symtab_lookup_current_scope` impede redeclaração no mesmo escopo. Símbolos armazenam tipo, espécie (variável, função ou procedimento), parâmetros e estado de inicialização.
@@ -257,7 +254,7 @@ expressao         ::= expressao ( "+" | "-" | "*" | "/" ) expressao
 As regras abaixo descrevem os padrões usados pelo Flex em `src/lexer.l`. Espaços em branco e quebras de linha são ignorados fora dos literais de texto e comentários.
 
 ```ebnf
-ID                ::= LETRA ( LETRA | DIGITO | "_" )* ;
+ID                ::= ( LETRA | "_" ) ( LETRA | DIGITO | "_" )* ;
 LETRA             ::= "A" | ... | "Z" | "a" | ... | "z" ;
 DIGITO            ::= "0" | "1" | "2" | "3" | "4"
                     | "5" | "6" | "7" | "8" | "9" ;
@@ -372,6 +369,8 @@ Os literais inteiros passam por `strtol` e são rejeitados fora da faixa de `int
         ├── erro_funcao_sem_retorno.glu
         ├── erro_funcao_retorno_condicional.glu
         ├── erro_tipos_retorno.glu
+        ├── erro_recursao_aritmetica_texto.glu
+        ├── erro_recursao_tipo_variavel.glu
         ├── erro_procedimento_como_expressao.glu
         ├── erro_subrotina_como_variavel.glu
         ├── erro_subrotina_aninhada.glu
@@ -478,6 +477,8 @@ As entradas abaixo usam uma entrada vazia, exceto nos casos que declaram `CISCA`
 | `tests/invalid/erro_funcao_sem_retorno.glu` | — | `Erro semantico`: função sem retorno |
 | `tests/invalid/erro_funcao_retorno_condicional.glu` | — | `Erro semantico`: nem todos os caminhos retornam |
 | `tests/invalid/erro_tipos_retorno.glu` | — | `Erro semantico`: retornos com tipos incompatíveis |
+| `tests/invalid/erro_recursao_aritmetica_texto.glu` | — | `Erro semantico`: operação aritmética inválida com chamada recursiva de `texto` |
+| `tests/invalid/erro_recursao_tipo_variavel.glu` | — | `Erro semantico`: inicialização de `inteiro` com chamada recursiva de `texto` |
 | `tests/invalid/erro_procedimento_como_expressao.glu` | — | `Erro semantico`: procedimento usado em expressão |
 | `tests/invalid/erro_subrotina_como_variavel.glu` | — | `Erro semantico`: sub-rotina usada como variável |
 | `tests/invalid/erro_subrotina_aninhada.glu` | — | `Erro semantico`: sub-rotina declarada fora do escopo global |

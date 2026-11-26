@@ -175,13 +175,13 @@ comando_entrada:
     ;
 
 comando_if:
-    IFGLU ABRE_PAREN expressao FECHA_PAREN bloco_escopo else_opt {
+    IFGLU ABRE_PAREN expressao FECHA_PAREN {
         semantic_check_condition("IFGLU", $3->data_type, yylineno);
-
+    } bloco_escopo else_opt {
         ASTNode *n = create_node(NODE_IF);
         n->left = $3;
-        n->right = $5;
-        n->extra = $6;
+        n->right = $6;
+        n->extra = $7;
         $$ = n;
     }
     ;
@@ -192,8 +192,10 @@ else_opt:
     ;
 
 comando_while:
-    WHILEGLU ABRE_PAREN expressao FECHA_PAREN { semantic_enter_loop(); } bloco_escopo {
+    WHILEGLU ABRE_PAREN expressao FECHA_PAREN {
         semantic_check_condition("WHILEGLU", $3->data_type, yylineno);
+        semantic_enter_loop();
+    } bloco_escopo {
         semantic_exit_loop();
 
         ASTNode *n = create_node(NODE_WHILE);
@@ -209,17 +211,18 @@ for_init:
     ;
 
 comando_for:
-    FORGLU ABRE_PAREN { semantic_enter_scope(); } for_init PONTO_VIRGULA expressao PONTO_VIRGULA atribuicao FECHA_PAREN
-    ABRE_CHAVE { semantic_enter_loop(); } comando_lista_opt FECHA_CHAVE {
+    FORGLU ABRE_PAREN { semantic_enter_scope(); } for_init PONTO_VIRGULA expressao PONTO_VIRGULA {
         semantic_check_condition("FORGLU", $6->data_type, yylineno);
+    } atribuicao FECHA_PAREN
+    ABRE_CHAVE { semantic_enter_loop(); } comando_lista_opt FECHA_CHAVE {
         semantic_exit_loop();
         semantic_exit_scope();
 
         ASTNode *n = create_node(NODE_FOR);
         n->init = $4;
         n->left = $6;
-        n->extra = $8;
-        n->right = $12;
+        n->extra = $9;
+        n->right = $13;
         $$ = n;
     }
     ;

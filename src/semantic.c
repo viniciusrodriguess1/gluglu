@@ -217,29 +217,159 @@ static bool contains_return_statement(ASTNode *statements) {
     return false;
 }
 
-static void update_function_call_types(ASTNode *node, const char *name, DataType type) {
-    for (ASTNode *curr = node; curr; curr = curr->next) {
-        update_function_call_types(curr->left, name, type);
-        update_function_call_types(curr->right, name, type);
-        update_function_call_types(curr->extra, name, type);
-        update_function_call_types(curr->init, name, type);
+static bool resolve_recursive_node(ASTNode *node, const char *name, DataType *return_type, int line);
 
-        if (curr->type == NODE_FUNC_CALL && strcmp(curr->name, name) == 0) {
-            curr->data_type = type;
-        } else if (curr->type == NODE_BIN_OP && curr->data_type == TYPE_UNKNOWN &&
-                   curr->left && curr->right) {
-            DataType lt = curr->left->data_type;
-            DataType rt = curr->right->data_type;
-            if ((lt == TYPE_INTEIRO || lt == TYPE_REAL) &&
-                (rt == TYPE_INTEIRO || rt == TYPE_REAL)) {
-                curr->data_type = (lt == TYPE_REAL || rt == TYPE_REAL) ? TYPE_REAL : TYPE_INTEIRO;
-            }
-        } else if (curr->type == NODE_UNARY_OP && curr->data_type == TYPE_UNKNOWN &&
-                   strcmp(curr->op, "-") == 0 && curr->left) {
-            curr->data_type = curr->left->data_type;
-        } else if (curr->type == NODE_RETURN && curr->data_type == TYPE_UNKNOWN && curr->left) {
-            curr->data_type = curr->left->data_type;
+static bool resolve_recursive_list(ASTNode *list, const char *name, DataType *return_type, int line) {
+    bool changed = false;
+    for (ASTNode *curr = list; curr; curr = curr->next) {
+        if (resolve_recursive_node(curr, name, return_type, line)) {
+            changed = true;
         }
+    }
+    return changed;
+}
+
+static bool resolve_recursive_node(ASTNode *curr, const char *name, DataType *return_type, int line) {
+    if (!curr) return false;
+
+    switch (curr->type) {
+        case NODE_FUNC_CALL: {
+            Symbol *sym = symtab_lookup(symtab, curr->name);
+            size_t index = 0;
+            for (ASTNode *arg = curr->left; arg; arg = arg->next, index++) {
+                if (resolve_recursive_node(arg, name, return_type, line) &&
+                    arg->data_type != TYPE_UNKNOWN &&
+                    sym && sym->kind != SYM_VAR && index < sym->param_count) {
+                    DataType expected = sym->param_types[index];
+                    if (!is_type_compatible(expected, arg->data_type)) {
+                        fprintf(stderr, "Erro semantico na linha %d: argumento %zu de '%s' tem tipo incompativel. Esperado '%s', recebido '%s'.\n",
+                                line, index + 1, curr->name, datatype_to_str(expected), datatype_to_str(arg->data_type));
+                        semantic_errors++;
+                    }
+                }
+            }
+            if (strcmp(curr->name, name) == 0 && curr->data_type != *return_type) {
+                curr->data_type = *return_type;
+                return true;
+            }
+            return false;
+        }
+
+        case NODE_BIN_OP: {
+            DataType prev_type = curr->data_type;
+            bool left_changed = resolve_recursive_node(curr->left, name, return_type, line);
+            bool right_changed = resolve_recursive_node(curr->right, name, return_type, line);
+
+            if ((left_changed || right_changed) && curr->left && curr->right) {
+                DataType lt = curr->left->data_type;
+                DataType rt = curr->right->data_type;
+                if (strcmp(curr->op, "+") == 0 || strcmp(curr->op, "-") == 0 ||
+                    strcmp(curr->op, "*") == 0 || strcmp(curr->op, "/") == 0) {
+                    curr->data_type = semantic_infer_arith(curr->op, lt, rt, line);
+                } else if (strcmp(curr->op, "<") == 0 || strcmp(curr->op, ">") == 0 ||
+                           strcmp(curr->op, "<=") == 0 || strcmp(curr->op, ">=") == 0 ||
+                           strcmp(curr->op, "==") == 0 || strcmp(curr->op, "!=") == 0) {
+                    curr->data_type = semantic_check_rel(curr->op, lt, rt, line);
+                } else if (strcmp(curr->op, "&&") == 0 || strcmp(curr->op, "||") == 0) {
+                    const char *logic_op = strcmp(curr->op, "&&") == 0 ? "and" : "or";
+                    curr->data_type = semantic_check_logic(logic_op, lt, rt, line);
+                }
+            }
+            return curr->data_type != prev_type;
+        }
+
+        case NODE_UNARY_OP: {
+            DataType prev_type = curr->data_type;
+            if (resolve_recursive_node(curr->left, name, return_type, line) && curr->left) {
+                if (strcmp(curr->op, "-") == 0) {
+                    curr->data_type = semantic_infer_unary_minus(curr->left->data_type, line);
+                } else if (strcmp(curr->op, "!") == 0) {
+                    curr->data_type = semantic_check_logic("not", curr->left->data_type, TYPE_BOOLEANO, line);
+                }
+            }
+            return curr->data_type != prev_type;
+        }
+
+        case NODE_VAR_DECL: {
+            if (resolve_recursive_node(curr->right, name, return_type, line) &&
+                curr->right && curr->right->data_type != TYPE_UNKNOWN &&
+                !is_type_compatible(curr->data_type, curr->right->data_type)) {
+                fprintf(stderr, "Erro semantico na linha %d: tipo incompativel ao inicializar '%s'. Esperado '%s', recebido '%s'.\n",
+                        line, curr->left ? curr->left->name : "?",
+                        datatype_to_str(curr->data_type), datatype_to_str(curr->right->data_type));
+                semantic_errors++;
+            }
+            return false;
+        }
+
+        case NODE_ASSIGN: {
+            if (resolve_recursive_node(curr->right, name, return_type, line) &&
+                curr->right && curr->right->data_type != TYPE_UNKNOWN &&
+                curr->data_type != TYPE_UNKNOWN &&
+                !is_type_compatible(curr->data_type, curr->right->data_type)) {
+                fprintf(stderr, "Erro semantico na linha %d: tipo incompativel na atribuicao para '%s'. Esperado '%s', recebido '%s'.\n",
+                        line, curr->left ? curr->left->name : "?",
+                        datatype_to_str(curr->data_type), datatype_to_str(curr->right->data_type));
+                semantic_errors++;
+            }
+            return false;
+        }
+
+        case NODE_PRINT:
+            resolve_recursive_node(curr->left, name, return_type, line);
+            return false;
+
+        case NODE_IF: {
+            if (resolve_recursive_node(curr->left, name, return_type, line) && curr->left) {
+                semantic_check_condition("IFGLU", curr->left->data_type, line);
+            }
+            resolve_recursive_list(curr->right, name, return_type, line);
+            resolve_recursive_list(curr->extra, name, return_type, line);
+            return false;
+        }
+
+        case NODE_WHILE: {
+            if (resolve_recursive_node(curr->left, name, return_type, line) && curr->left) {
+                semantic_check_condition("WHILEGLU", curr->left->data_type, line);
+            }
+            resolve_recursive_list(curr->right, name, return_type, line);
+            return false;
+        }
+
+        case NODE_FOR: {
+            resolve_recursive_node(curr->init, name, return_type, line);
+            if (resolve_recursive_node(curr->left, name, return_type, line) && curr->left) {
+                semantic_check_condition("FORGLU", curr->left->data_type, line);
+            }
+            resolve_recursive_node(curr->extra, name, return_type, line);
+            resolve_recursive_list(curr->right, name, return_type, line);
+            return false;
+        }
+
+        case NODE_BLOCK:
+            resolve_recursive_list(curr->left, name, return_type, line);
+            return false;
+
+        case NODE_RETURN: {
+            if (resolve_recursive_node(curr->left, name, return_type, line) && curr->left) {
+                curr->data_type = curr->left->data_type;
+                if (curr->left->data_type != TYPE_UNKNOWN &&
+                    curr->left->data_type != *return_type) {
+                    bool both_numeric = (*return_type == TYPE_INTEIRO || *return_type == TYPE_REAL) &&
+                                        (curr->left->data_type == TYPE_INTEIRO || curr->left->data_type == TYPE_REAL);
+                    if (both_numeric) {
+                        *return_type = TYPE_REAL;
+                    } else {
+                        fprintf(stderr, "Erro semantico na linha %d: tipos de retorno incompativeis em CHOCA.\n", line);
+                        semantic_errors++;
+                    }
+                }
+            }
+            return false;
+        }
+
+        default:
+            return false;
     }
 }
 
@@ -264,7 +394,11 @@ DataType semantic_end_function(ASTNode *body, const char *name, int line) {
     }
 
     if (return_type == TYPE_UNKNOWN) return_type = TYPE_INTEIRO;
-    update_function_call_types(body, name, return_type);
+    DataType previous_type = return_type;
+    resolve_recursive_list(body, name, &return_type, line);
+    if (return_type != previous_type && semantic_errors == 0) {
+        resolve_recursive_list(body, name, &return_type, line);
+    }
 
     if (function_context && function_context->symbol) {
         function_context->symbol->type = return_type;

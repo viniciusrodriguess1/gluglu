@@ -54,10 +54,18 @@ run_valid_case() {
         idade)
             printf "20\n" | "$COMPILER" --run "$file" > "$out_file"
             grep -q "Acesso Liberado!" "$out_file"
+            if printf "   \n" | "$direct_bin" >/dev/null 2>&1; then
+                echo "FALHA: CISCA(inteiro) deveria rejeitar entrada contendo apenas espacos." >&2
+                exit 1
+            fi
             ;;
         entrada_texto)
             printf "42\n3.5\ntrue\nEsta linha de entrada tem espacos e mais de sessenta e quatro caracteres para validar o crescimento dinamico do buffer com seguranca.\n" | "$COMPILER" --run "$file" > "$out_file"
             grep -q "Conteudo igual." "$out_file"
+            if printf "42\n   \ntrue\ntexto\n" | "$direct_bin" >/dev/null 2>&1; then
+                echo "FALHA: CISCA(real) deveria rejeitar entrada contendo apenas espacos." >&2
+                exit 1
+            fi
             ;;
         operadores_relacionais)
             "$COMPILER" --run "$file" > "$out_file"
@@ -137,6 +145,11 @@ for file in tests/invalid/*.glu; do
     esac
     if ! grep -q "$expected_category" "$err_file"; then
         echo "FALHA: '$file' deveria emitir '$expected_category', mas o stderr foi:" >&2
+        cat "$err_file" >&2
+        exit 1
+    fi
+    if [ "$base" = "erro_condicao_nao_booleana" ] && ! grep -q "linha 1:" "$err_file"; then
+        echo "FALHA: '$file' deveria reportar erro na linha 1, mas o stderr foi:" >&2
         cat "$err_file" >&2
         exit 1
     fi

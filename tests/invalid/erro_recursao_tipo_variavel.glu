@@ -1,0 +1,9 @@
+CHOCA repetir(inteiro n) {
+    IFGLU (n <= 0) {
+        RETORNAGLU <fim>;
+    }
+    glu: x : inteiro <- repetir(n - 1);
+    RETORNAGLU <ok>;
+}
+
+GORGOREJA(repetir(1));
